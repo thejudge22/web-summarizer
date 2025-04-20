@@ -56,16 +56,20 @@ else:
 
 # Configure Gemini API
 gemini_api_key = os.getenv("GEMINI_API_KEY")
+# Get model name from environment variable, default to 'gemini-2.0-flash'
+gemini_model_name = os.getenv("GEMINI_MODEL_NAME", 'gemini-2.0-flash')
+
 if not gemini_api_key:
     app.logger.error("FATAL: GEMINI_API_KEY not found in environment variables.")
     # Allow app to run but log error, LLM checks will fail later
+    llm = None
 else:
     try:
         genai.configure(api_key=gemini_api_key)
-        llm = genai.GenerativeModel('gemini-1.5-flash') # Using 1.5 flash as per discussion
-        app.logger.info("Gemini API configured successfully with gemini-1.5-flash.")
+        llm = genai.GenerativeModel(gemini_model_name)
+        app.logger.info(f"Gemini API configured successfully with model: {gemini_model_name}.")
     except Exception as e:
-        app.logger.error(f"Failed to configure Gemini API: {e}")
+        app.logger.error(f"Failed to configure Gemini API with model '{gemini_model_name}': {e}")
         llm = None # Ensure llm is None if configuration fails
 
 # --- Karakeep / Hoarder Configuration ---
