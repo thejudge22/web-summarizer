@@ -3,6 +3,7 @@ import requests
 import logging
 import functools
 import re # For regex matching (YouTube video ID)
+import json # For parsing JSON responses, especially errors
 import markdown # Import the markdown library
 from bs4 import BeautifulSoup
 import google.generativeai as genai
@@ -82,26 +83,6 @@ else:
          app.logger.warning(f"KARAKEEP_API_URL ('{KARAKEEP_API_URL}') does not end with '/api/v1'. Ensure this is the correct base path.")
     KARAKEEP_ENABLED = True
     app.logger.info(f"Karakeep integration enabled. Target List: '{KARAKEEP_LIST_NAME}', API URL: '{KARAKEEP_API_URL}'")
-
-
-# Configure Gemini API - MOVED ABOVE KARAKEEP CONFIG
-# try:
-#     genai.configure(api_key=gemini_api_key)
-# #    llm = genai.GenerativeModel('gemini-2.5-flash-preview-04-17')
-#     llm = genai.GenerativeModel('gemini-2.0-flash-lite')
-#     app.logger.info("Gemini API configured successfully.")
-# except Exception as e:
-#     app.logger.error(f"Failed to configure Gemini API: {e}")
-#     llm = None # Ensure llm is None if configuration fails
-
-try:
-    genai.configure(api_key=gemini_api_key)
-#    llm = genai.GenerativeModel('gemini-2.5-flash-preview-04-17')
-    llm = genai.GenerativeModel('gemini-2.0-flash-lite')
-    app.logger.info("Gemini API configured successfully.")
-except Exception as e:
-    app.logger.error(f"Failed to configure Gemini API: {e}")
-    llm = None # Ensure llm is None if configuration fails
 
 # --- Authentication Decorator ---
 
@@ -499,15 +480,27 @@ def send_summary_to_karakeep(api_url: str, api_key: str, list_id: str, title: st
         if hasattr(e, 'response') and e.response is not None:
             app.logger.error(f"Response Status: {e.response.status_code}")
             try:
-                error_details = e.response.json(); app.logger.error(f"Response JSON: {error_details}")
-            except json.JSONDecodeError: # Use json.JSONDecodeError for Python 3.5+
-                 app.logger.error(f"Response Text: {e.response.text[:500]}...")
+                error_details = e.response.json()
+                app.logger.error(f"Response JSON: {error_details}")
+            except Exception as json_e: # Added missing except block
+                app.logger.error(f"Could not parse error response as JSON: {json_e}")
+                app.logger.error(f"Raw Response Text: {e.response.text[:500]}...") # Log raw text instead
+        # The general error log below might be redundant now, but keep it for broader issues
+        app.logger.error(f"Unexpected error during Karakeep summary sending (outside RequestException handling): {e}", exc_info=True) # Clarified log message
         return False
-    except Exception as e:
-        # Catch other unexpected errors
+    except Exception as e: # Catch other potential errors in the function
         app.logger.error(f"Unexpected error during Karakeep summary sending: {e}", exc_info=True) # Include traceback
         return False
+
+
+# --- Routes ---
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    """Handles user login."""
+    # If user is already logged in, redirect them away from login page
     if 'logged_in' in session:
+        flash("You are already logged in.", "info")
         return redirect(url_for('index'))
 
     if request.method == 'POST':
@@ -523,21 +516,23 @@ def send_summary_to_karakeep(api_url: str, api_key: str, list_id: str, title: st
             flash(f"Welcome back, {username}!", "success")
 
             # Redirect to the originally requested page or index
-            if next_url and is_valid_url(next_url): # Basic validation for the next_url
-                 # Prevent open redirect vulnerability by checking if the URL is internal or allowed
-                 # For simplicity here, we just check if it's a valid URL structure.
-                 # A more robust check would parse the URL and ensure it has the same host/origin.
-                 app.logger.info(f"Redirecting logged in user to: {next_url}")
+            # Basic validation for the next_url to prevent open redirect
+            # A more robust check would parse the URL and ensure it has the same host/origin.
+            if next_url and urlparse(next_url).netloc == urlparse(request.host_url).netloc:
+                 app.logger.info(f"Redirecting logged in user to intended destination: {next_url}")
                  return redirect(next_url)
             else:
-                 app.logger.info(f"Redirecting logged in user to index.")
+                 app.logger.info(f"Redirecting logged in user to index (no valid 'next' URL provided or external URL detected).")
                  return redirect(url_for('index'))
         else:
             app.logger.warning(f"Failed login attempt for username: {username}")
             flash("Invalid username or password.", "error")
+            # No redirect here, fall through to render login template again
 
     # For GET request or failed POST, render login form
-    return render_template('login.html')
+    # Pass the 'next' parameter to the template if it exists in the GET request args
+    return render_template('login.html', next=request.args.get('next', ''))
+
 
 @app.route('/logout')
 def logout():
