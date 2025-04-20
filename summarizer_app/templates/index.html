@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>URL Summarizer</title>
+    <style>
+        body { font-family: sans-serif; line-height: 1.6; padding: 20px; max-width: 800px; margin: auto; }
+        .container { background-color: #f9f9f9; padding: 25px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); position: relative; /* Needed for logout positioning */ }
+        .logout-link { position: absolute; top: 15px; right: 15px; font-size: 0.9em; color: #007bff; text-decoration: none; }
+        .logout-link:hover { text-decoration: underline; }
+        h1 { text-align: center; color: #333; }
+        label { display: block; margin-bottom: 8px; font-weight: bold; }
+        input[type="url"] { width: calc(100% - 22px); padding: 10px; margin-bottom: 15px; border: 1px solid #ccc; border-radius: 4px; }
+        button { background-color: #007bff; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; width: 100%; }
+        button:hover { background-color: #0056b3; }
+        .error { color: #a94442; background-color: #f2dede; border: 1px solid #ebccd1; padding: 10px; margin-bottom: 15px; border-radius: 4px; }
+        .flash-message { color: #31708f; background-color: #d9edf7; border: 1px solid #bce8f1; padding: 10px; margin-bottom: 15px; border-radius: 4px; }
+        .bookmarklet-info { margin-top: 30px; font-size: 0.9em; color: #555; background-color: #eee; padding: 15px; border-radius: 4px; }
+        .bookmarklet-info code { background-color: #ddd; padding: 2px 5px; border-radius: 3px; font-family: monospace; }
+        .options-section { margin-top: 20px; padding: 15px; background-color: #f0f0f0; border: 1px solid #ddd; border-radius: 4px; }
+        .options-section label { display: inline-block; margin-left: 5px; font-weight: normal; }
+        .options-section input[type="checkbox"] { vertical-align: middle; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        {% if username %}
+            <a href="{{ url_for('logout') }}" class="logout-link">Logout ({{ username }})</a>
+        {% endif %}
+        <h1>Summarize a Web Page</h1>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    {# Map category 'error' to class 'error', others to 'flash-message' #}
+                    <div class="{{ 'error' if category == 'error' else 'flash-message' }}">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        {# Removed the old explicit error_message block as flash handles it now #}
+
+        <form method="POST" action="{{ url_for('index') }}"> {# Use url_for for robustness #}
+            <label for="url">Enter URL:</label>
+            <input type="url" id="url" name="url" required placeholder="https://example.com" value="{{ submitted_url or '' }}">
+            <button type="submit">Summarize</button>
+
+            <div class="options-section">
+                <strong>Options:</strong><br>
+                <input type="checkbox" id="send_to_hoarder" name="send_to_hoarder" value="yes" {% if send_to_hoarder_checked %}checked{% endif %}>
+                <label for="send_to_hoarder">Send summary to Hoarder/Karakeep</label>
+            </div>
+        </form> <!-- Moved the closing form tag to wrap the options -->
+
+
+        <div class="bookmarklet-info">
+            <strong>Bookmarklet:</strong> Drag the following link to your bookmarks bar or right-click and "Bookmark This Link" to quickly summarize the current page (you must be logged in first):
+            <p>
+                <a href="javascript:void(window.open('{{ url_for('index', _external=True) }}?url='+encodeURIComponent(location.href)));">Summarize Current Page</a>
+            </p>
+            <p>Alternatively, create a bookmark manually with this code as the URL/Location:<br>
+            <code>javascript:void(window.open('{{ url_for('index', _external=True) }}?url='+encodeURIComponent(location.href)));</code>
+            </p>
+            <p>(Ensure this service is running and accessible at <code>{{ url_for('index', _external=True) }}</code>)</p>
+        </div>
+    </div>
+</body>
+</html>

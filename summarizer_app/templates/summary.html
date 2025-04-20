@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Summary Result</title>
+    <style>
+        body { font-family: sans-serif; line-height: 1.6; padding: 20px; max-width: 800px; margin: auto; }
+        .container { background-color: #f9f9f9; padding: 25px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); position: relative; /* Needed for logout positioning */ }
+        .logout-link { position: absolute; top: 15px; right: 15px; font-size: 0.9em; color: #007bff; text-decoration: none; }
+        .logout-link:hover { text-decoration: underline; }
+        h1 { text-align: center; color: #333; }
+        h2 { color: #555; border-bottom: 1px solid #eee; padding-bottom: 5px; margin-top: 30px;}
+        .original-url { word-wrap: break-word; font-size: 0.9em; margin-bottom: 20px; }
+        .original-url a { color: #007bff; }
+        .summary { background-color: #e9f5ff; padding: 15px; border-left: 4px solid #007bff; margin-bottom: 20px; border-radius: 0 4px 4px 0;}
+        .back-link { display: inline-block; margin-top: 20px; text-decoration: none; background-color: #6c757d; color: white; padding: 8px 15px; border-radius: 4px; }
+        .back-link:hover { background-color: #5a6268; }
+    </style>
+</head>
+<body>
+    <div class="container">
+         {% if username %}
+            <a href="{{ url_for('logout') }}" class="logout-link">Logout ({{ username }})</a>
+        {% endif %}
+        <h1>Summary Result</h1>
+
+        <h2>Original URL</h2>
+        <div class="original-url">
+            <a href="{{ original_url }}" target="_blank" rel="noopener noreferrer">{{ original_url }}</a>
+        </div>
+
+        <h2>Generated Summary</h2>
+        {% if summary_html %}
+            <div class="summary">
+                {{ summary_html | safe }} {# Render the pre-converted HTML #}
+            </div>
+        {% else %}
+            <div class="error">Could not generate summary for the provided URL.</div>
+        {% endif %}
+
+        <a href="{{ url_for('index') }}" class="back-link">« Summarize Another URL</a>
+    </div>
+</body>
+</html>
