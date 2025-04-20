@@ -1,0 +1,43 @@
+services:
+#   webserver:
+#     image: php:apache 
+#     ports:
+#       - "28580:80"
+#     volumes:
+#       - ./html:/var/www/html
+#     depends_on:
+#       - database 
+# 
+#   database:
+#     image: mariadb:latest 
+#     environment:
+#       MYSQL_ROOT_PASSWORD: root_password # Set root password for MariaDB
+#       MYSQL_DATABASE: lamp_db    #you can change the database name here
+#     volumes:
+#       - ./mysql_data:/var/lib/mysql 
+#       
+#   phpmyadmin:
+#     image: arm64v8/phpmyadmin
+#     ports:
+#       - "28581:80"    #this line maps your pc port to the container port
+#     depends_on:
+#       - database    #this line links this container to the db container
+#     environment:
+#       PMA_HOST: database      
+
+  summarizer:
+    build:
+      context: ./summarizer_app # Path to the directory containing the summarizer's Dockerfile
+      dockerfile: Dockerfile
+    container_name: summarizer_service
+    ports:
+      - "25001:5000" # Map host port 5000 to container port 5000 (where Gunicorn listens)
+    volumes:
+      # Mount local code for development (changes reflect without rebuild)
+      # Comment out or remove this line for production builds
+      - ./summarizer_app:/app
+    env_file:
+      # Load environment variables from .env file in the summarizer_app directory
+      - ./summarizer_app/.env
+    restart: unless-stopped
+
