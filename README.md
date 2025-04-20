@@ -1,6 +1,6 @@
 # Web Summarizer
 
-A simple web application that summarizes web pages and YouTube videos using the Google Gemini API. It includes basic authentication, a bookmarklet for quick summarizing, and optional integration with [Karakeep](https://github.com/madjieb/karakeep)/[Hoarder](https://github.com/hoarder/hoarder).
+A simple web application that summarizes web pages and YouTube videos using the Google Gemini API. It includes basic authentication, a bookmarklet for quick summarizing, and optional integration with Karakeep
 
 ## Features
 
