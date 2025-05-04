@@ -6,7 +6,7 @@ A simple web application that summarizes web pages and YouTube videos using the 
 
 *   Summarize content from any publicly accessible URL.
 *   Summarize YouTube videos by fetching and processing their transcripts.
-*   Uses Google's Gemini 1.5 Flash model for efficient summarization.
+*   Uses the Google Gemini API with a configurable model (defaulting to `gemini-2.0-flash`).
 *   Simple web interface built with Flask.
 *   Bookmarklet to quickly summarize the currently viewed page.
 *   Basic username/password authentication to protect access.
@@ -16,7 +16,7 @@ A simple web application that summarizes web pages and YouTube videos using the 
 ## Technology Stack
 
 *   **Backend:** Python, Flask
-*   **LLM:** Google Gemini API (specifically `gemini-1.5-flash`)
+*   **LLM:** Google Gemini API (configurable via `GEMINI_MODEL_NAME` environment variable)
 *   **Web Scraping:** BeautifulSoup4, requests
 *   **YouTube Transcripts:** `youtube-transcript-api`
 *   **Serving:** Gunicorn
@@ -78,6 +78,7 @@ The `.env` file within the `summarizer_app` directory controls the application's
 *   `KARAKEEP_API_URL`: **Optional.** The base URL for your Karakeep/Hoarder API (e.g., `http://your-hoarder.com/api/v1`). Leave blank to disable integration.
 *   `KARAKEEP_API_KEY`: **Optional.** The API key generated within your Karakeep/Hoarder instance. Required if `KARAKEEP_API_URL` is set.
 *   `KARAKEEP_LIST_NAME`: **Optional.** The exact name of the list within Karakeep/Hoarder where summaries should be sent. Required if `KARAKEEP_API_URL` is set.
+*   `GEMINI_MODEL_NAME`: **Optional.** The name of the Gemini model to use for summarization (e.g., `gemini-1.5-flash`, `gemini-1.5-pro`). Defaults to `gemini-2.0-flash`.
 
 **Note:** The application requires `FLASK_SECRET_KEY` to be set for login sessions to persist across restarts. If not set, a temporary key is generated, but logins will be lost on restart.
 
