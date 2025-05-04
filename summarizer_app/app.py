@@ -8,7 +8,7 @@ import markdown # Import the markdown library
 from bs4 import BeautifulSoup
 import google.generativeai as genai
 from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled, NoTranscriptFound # YouTube transcript fetching
-from flask import Flask, request, render_template, abort, flash, get_flashed_messages, session, redirect, url_for
+from flask import Flask, request, render_template, abort, flash, get_flashed_messages, session, redirect, url_for, jsonify # Added jsonify
 from dotenv import load_dotenv
 from urllib.parse import urlparse
 from requests.exceptions import RequestException
@@ -548,45 +548,51 @@ def logout():
     return redirect(url_for('login'))
 
 
-@app.route('/', methods=['GET', 'POST'])
+@app.route('/', methods=['GET']) # Only handle GET requests now
 @login_required # Protect this route
 def index():
-    """Handles both displaying the form and processing submissions/query params."""
-    error_message = None
-    target_url = None
-
-    # Check for flashed messages from previous attempts (e.g., login redirects)
-    # Note: get_flashed_messages clears messages, so call it where you display them (template is better)
-    # flashed_errors = get_flashed_messages(category_filter=["error"])
-    # if flashed_errors:
-    #     error_message = flashed_errors[0] # Display the first error
-
-    if request.method == 'POST':
-        # Handle form submission
-        target_url = request.form.get('url')
-        app.logger.info(f"Received URL via POST form: {target_url}")
-
-
-    elif request.method == 'GET':
-        # Handle direct access or bookmarklet (query parameter) AFTER login
-        target_url = request.args.get('url')
-        if target_url:
-             app.logger.info(f"Received URL via GET parameter: {target_url}")
-
+    """Handles displaying the form and pre-filling from query params (e.g., bookmarklet)."""
+    target_url = request.args.get('url') # Check for URL from query param
     if target_url:
-        # Validate the URL
+        app.logger.info(f"Received URL via GET parameter: {target_url}")
+        # Basic validation before pre-filling
         if not is_valid_url(target_url):
-            app.logger.warning(f"Invalid URL format provided: {target_url}")
-            flash("Invalid URL format. Please include http:// or https://", "error")
-            # Re-render index, pass current checkbox state
-            send_to_hoarder_checked = session.get('send_to_hoarder_enabled', False)
-            return render_template('index.html', username=session.get('username'), send_to_hoarder_checked=send_to_hoarder_checked)
+             app.logger.warning(f"Invalid URL format in GET parameter: {target_url}")
+             flash("Invalid URL format provided in the link. Please check the URL.", "error")
+             target_url = None # Don't pre-fill invalid URL
 
-        content = None
-        summary = None
-        is_youtube = False
-        video_id = is_youtube_url(target_url)
+    # Render the main form page
+    # Pass the potentially pre-filled URL and username
+    return render_template('index.html', submitted_url=target_url, username=session.get('username'))
 
+
+@app.route('/summarize_ajax', methods=['POST'])
+@login_required
+def summarize_ajax():
+    """Handles AJAX request for summarization."""
+    if not request.is_json:
+        app.logger.warning("Received non-JSON request on /summarize_ajax endpoint.")
+        return jsonify({'status': 'error', 'message': 'Invalid request format. Expected JSON.'}), 400
+
+    data = request.get_json()
+    target_url = data.get('url')
+    app.logger.info(f"Received URL via AJAX POST: {target_url}")
+
+    if not target_url:
+        app.logger.warning("No URL provided in AJAX request.")
+        return jsonify({'status': 'error', 'message': 'No URL provided.'}), 400
+
+    # Validate the URL
+    if not is_valid_url(target_url):
+        app.logger.warning(f"Invalid URL format provided via AJAX: {target_url}")
+        return jsonify({'status': 'error', 'message': 'Invalid URL format. Please include http:// or https://'}), 400
+
+    content = None
+    summary = None
+    is_youtube = False
+    video_id = is_youtube_url(target_url)
+
+    try:
         if video_id:
             # It's a YouTube URL
             is_youtube = True
@@ -594,47 +600,63 @@ def index():
             content = fetch_youtube_transcript(video_id)
             if content is None:
                 app.logger.error(f"Failed to fetch transcript for YouTube URL: {target_url}")
-                flash("Could not fetch transcript for the YouTube video. Transcripts might be disabled or unavailable.", "error")
-                send_to_hoarder_checked = session.get('send_to_hoarder_enabled', False)
-                return render_template('index.html', submitted_url=target_url, username=session.get('username'), send_to_hoarder_checked=send_to_hoarder_checked)
+                return jsonify({'status': 'error', 'message': 'Could not fetch transcript. Transcripts might be disabled or unavailable.'}), 400
             else:
-                # Get YouTube summary
                 summary = get_summary_from_llm(content, target_url, is_youtube=True)
-
         else:
             # It's a regular web page URL
             app.logger.info(f"Processing as standard web page: {target_url}")
             content = fetch_page_content(target_url)
             if content is None:
                 app.logger.error(f"Failed to fetch or process content for web URL: {target_url}")
-                flash("Could not fetch or process content from the URL. The site might be inaccessible, blocking requests, or not providing HTML content.", "error")
-                send_to_hoarder_checked = session.get('send_to_hoarder_enabled', False)
-                return render_template('index.html', submitted_url=target_url, username=session.get('username'), send_to_hoarder_checked=send_to_hoarder_checked)
+                return jsonify({'status': 'error', 'message': 'Could not fetch or process content. Site might be inaccessible or blocking requests.'}), 400
             else:
-                 # Get web page summary
                  summary = get_summary_from_llm(content, target_url, is_youtube=False)
 
-
-        # Check if summary generation failed (for either type)
+        # Check if summary generation failed
         if summary is None:
             app.logger.error(f"Failed to get summary from LLM for URL: {target_url} (Type: {'YouTube' if is_youtube else 'WebPage'})")
-            flash("Failed to generate summary. The LLM might be unavailable or encountered an issue with the content.", "error")
-            send_to_hoarder_checked = session.get('send_to_hoarder_enabled', False)
-            return render_template('index.html', submitted_url=target_url, username=session.get('username'), send_to_hoarder_checked=send_to_hoarder_checked)
+            return jsonify({'status': 'error', 'message': 'Failed to generate summary. LLM might be unavailable or had an issue.'}), 500 # Internal server error likely
 
-        # Success! Process Karakeep sending if enabled, then render summary page
-        # Regardless of Karakeep outcome, proceed to render the summary page
-        app.logger.info(f"Successfully generated summary (Markdown) for: {target_url} (Type: {'YouTube' if is_youtube else 'WebPage'})")
+        # Success! Store results in session for the next request
+        app.logger.info(f"Successfully generated summary (Markdown) for: {target_url}")
         summary_html = markdown.markdown(summary) # Convert Markdown to HTML
         app.logger.info(f"Converted summary to HTML.")
 
-        # Pass username and HTML summary to summary template
-        return render_template('summary.html', original_url=target_url, summary_html=summary_html, username=session.get('username'))
+        # Store necessary data in session to be retrieved by /show_summary
+        session['summary_result'] = {
+            'original_url': target_url,
+            'summary_html': summary_html,
+            'summary_markdown': summary # Store markdown for Karakeep if needed later
+        }
 
-    # If no URL yet (initial GET access without param), or after POST error handled above
-    # Pass username and current checkbox state
-    send_to_hoarder_checked = session.get('send_to_hoarder_enabled', False) # Get current state or default
-    return render_template('index.html', username=session.get('username'), send_to_hoarder_checked=send_to_hoarder_checked)
+        return jsonify({'status': 'success', 'redirect_url': url_for('show_summary')})
+
+    except Exception as e:
+        # Catch any unexpected errors during the process
+        app.logger.error(f"Unexpected error during summarization for {target_url}: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'message': 'An unexpected server error occurred.'}), 500
+
+
+@app.route('/show_summary')
+@login_required
+def show_summary():
+    """Displays the summary result retrieved from the session."""
+    summary_data = session.pop('summary_result', None) # Retrieve and remove from session
+
+    if not summary_data:
+        app.logger.warning("Accessed /show_summary without summary data in session.")
+        flash("No summary data found. Please generate a summary first.", "info")
+        return redirect(url_for('index'))
+
+    # Render the summary template with the retrieved data
+    return render_template(
+        'summary.html',
+        original_url=summary_data.get('original_url'),
+        summary_html=summary_data.get('summary_html'),
+        summary_markdown=summary_data.get('summary_markdown'), # Pass markdown to template
+        username=session.get('username') # Pass username for logout link
+    )
 
 
 # Optional: Add a simple health check endpoint (unprotected)
@@ -655,34 +677,24 @@ def send_to_karakeep():
     original_url = request.form.get('original_url')
     if not original_url:
         flash("Missing original URL for Karakeep submission.", "error")
-        return redirect(url_for('index')) # Or redirect back to summary?
+        # Redirect back to the summary page if possible, otherwise index
+        # Since we don't have summary data here easily, redirect to index.
+        return redirect(url_for('index'))
 
-    # Re-fetch content and generate summary (can be optimized by passing summary from index)
-    content = None
-    summary = None
-    is_youtube = False
-    video_id = is_youtube_url(original_url)
+    # Retrieve the summary markdown directly from the submitted form
+    summary_markdown = request.form.get('summary_markdown')
 
-    if video_id:
-        is_youtube = True
-        content = fetch_youtube_transcript(video_id)
-        if content is None:
-            flash("Could not fetch transcript for Karakeep submission.", "error")
-            return redirect(url_for('index')) # Or redirect back to summary?
-        summary = get_summary_from_llm(content, original_url, is_youtube=True)
-    else:
-        content = fetch_page_content(original_url)
-        if content is None:
-            flash("Could not fetch content for Karakeep submission.", "error")
-            return redirect(url_for('index')) # Or redirect back to summary?
-        summary = get_summary_from_llm(content, original_url, is_youtube=False)
+    if not summary_markdown:
+        # This should ideally not happen if the form is correct, but handle it just in case
+        app.logger.error("Missing summary_markdown in form submission to Karakeep.")
+        flash("Could not find summary content to send to Karakeep.", "error")
+        # Redirect back to index as we don't have the context to show the summary page again easily
+        return redirect(url_for('index'))
 
-    if summary is None:
-        flash("Failed to re-generate summary for Karakeep submission.", "error")
-        return redirect(url_for('index')) # Or redirect back to summary?
+    app.logger.info("Received summary markdown from form for Karakeep submission.")
 
-    # Proceed with Karakeep submission
-    karakeep_title = get_short_title_from_llm(summary)
+    # Proceed with Karakeep submission using summary_markdown
+    karakeep_title = get_short_title_from_llm(summary_markdown)
 
     if not karakeep_title:
         flash("Failed to generate title for Karakeep.", "error")
@@ -696,7 +708,7 @@ def send_to_karakeep():
 
     karakeep_sent_ok = send_summary_to_karakeep(
         KARAKEEP_API_URL, KARAKEEP_API_KEY, karakeep_list_id,
-        karakeep_title, summary, original_url
+        karakeep_title, summary_markdown, original_url # Use summary_markdown here
     )
 
     if karakeep_sent_ok:

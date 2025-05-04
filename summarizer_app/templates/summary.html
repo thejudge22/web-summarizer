@@ -81,6 +81,8 @@
 
             <form method="POST" action="{{ url_for('send_to_karakeep') }}" class="karakeep-form">
                 <input type="hidden" name="original_url" value="{{ original_url }}">
+                {# Add hidden input to pass the markdown summary #}
+                <input type="hidden" name="summary_markdown" value="{{ summary_markdown | e }}"> {# Use 'e' filter for HTML attribute escaping #}
                 <button type="submit" class="karakeep-button">Send Summary to Karakeep</button>
             </form>
         </div>

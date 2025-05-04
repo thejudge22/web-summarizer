@@ -21,6 +21,32 @@
         .options-section { margin-top: 20px; padding: 15px; background-color: #f0f0f0; border: 1px solid #ddd; border-radius: 4px; }
         .options-section label { display: inline-block; margin-left: 5px; font-weight: normal; }
         .options-section input[type="checkbox"] { vertical-align: middle; }
+        /* Loading Indicator Styles */
+        #loading-indicator {
+            display: none; /* Hidden by default */
+            text-align: center;
+            padding: 15px;
+            margin-bottom: 15px;
+            font-weight: bold;
+            color: #0056b3;
+            background-color: #d9edf7;
+            border: 1px solid #bce8f1;
+            border-radius: 4px;
+        }
+        /* Ensure error class from flash matches JS-added errors */
+        .error {
+            color: #a94442;
+            background-color: #f2dede;
+            border: 1px solid #ebccd1;
+            padding: 10px;
+            margin-bottom: 15px;
+            border-radius: 4px;
+            display: block; /* Ensure it takes space */
+        }
+        #error-message-container { /* Container for JS-added errors */
+             margin-bottom: 15px;
+        }
+
     </style>
 </head>
 <body>
@@ -39,12 +65,16 @@
             {% endif %}
         {% endwith %}
 
-        {# Removed the old explicit error_message block as flash handles it now #}
+        {# Container for dynamically added error messages #}
+        <div id="error-message-container"></div>
 
-        <form method="POST" action="{{ url_for('index') }}"> {# Use url_for for robustness #}
+        {# Loading Indicator #}
+        <div id="loading-indicator">Processing... Please wait.</div>
+
+        <form id="summarize-form" method="POST" action="{{ url_for('summarize_ajax') }}"> {# Action updated, though JS overrides #}
             <label for="url">Enter URL:</label>
             <input type="url" id="url" name="url" required placeholder="https://example.com" value="{{ submitted_url or '' }}">
-            <button type="submit">Summarize</button>
+            <button type="submit" id="submit-button">Summarize</button>
 
 
         </form> <!-- Moved the closing form tag to wrap the options -->
@@ -61,5 +91,88 @@
             <p>(Ensure this service is running and accessible at <code>{{ url_for('index', _external=True) }}</code>)</p>
         </div>
     </div>
+
+    <script>
+        const form = document.getElementById('summarize-form');
+        const urlInput = document.getElementById('url');
+        const loadingIndicator = document.getElementById('loading-indicator');
+        const submitButton = document.getElementById('submit-button');
+        const errorMessageContainer = document.getElementById('error-message-container');
+
+        form.addEventListener('submit', async (event) => {
+            event.preventDefault(); // Prevent default form submission
+
+            const url = urlInput.value;
+            if (!url) {
+                displayError("Please enter a URL.");
+                return;
+            }
+
+            // Clear previous errors and show loading indicator
+            clearErrors();
+            loadingIndicator.style.display = 'block';
+            submitButton.disabled = true;
+            submitButton.textContent = 'Processing...';
+
+            try {
+                const response = await fetch("{{ url_for('summarize_ajax') }}", {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json' // Indicate we expect JSON back
+                    },
+                    body: JSON.stringify({ url: url })
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.status === 'success') {
+                    // Redirect to the summary page on success
+                    window.location.href = data.redirect_url;
+                    // No need to hide loading indicator here as page redirects
+                } else if (data.status === 'error') {
+                    // Display error message from backend
+                    displayError(data.message || "An unknown error occurred.");
+                    hideLoading();
+                } else {
+                    // Handle non-JSON errors or unexpected status
+                    displayError(`Server error: ${response.statusText || 'Unknown error'}`);
+                    hideLoading();
+                }
+            } catch (error) {
+                // Handle network errors or fetch failures
+                console.error("Fetch error:", error);
+                displayError("Failed to connect to the server. Please check your network.");
+                hideLoading();
+            }
+        });
+
+        function displayError(message) {
+            // Remove existing flashed messages first to avoid duplicates
+            const existingFlashed = document.querySelectorAll('.flash-message, .error');
+            existingFlashed.forEach(el => el.remove());
+
+            // Add the new error message
+            errorMessageContainer.innerHTML = `<div class="error">${message}</div>`;
+        }
+
+        function clearErrors() {
+            errorMessageContainer.innerHTML = '';
+             // Also clear any existing flashed messages that might be present on load
+            const existingFlashed = document.querySelectorAll('.flash-message, .error');
+            existingFlashed.forEach(el => el.remove());
+        }
+
+        function hideLoading() {
+             loadingIndicator.style.display = 'none';
+             submitButton.disabled = false;
+             submitButton.textContent = 'Summarize';
+        }
+
+        // Clear errors on initial load if any were flashed (e.g., from login redirect)
+        // We keep flashed messages displayed by Jinja initially, JS clears/adds errors on submit
+        // clearErrors(); // Optional: uncomment if you want JS to always clear flashed messages on load
+
+    </script>
 </body>
 </html>
