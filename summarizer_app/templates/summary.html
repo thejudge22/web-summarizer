@@ -14,8 +14,45 @@
         .original-url { word-wrap: break-word; font-size: 0.9em; margin-bottom: 20px; }
         .original-url a { color: #007bff; }
         .summary { background-color: #e9f5ff; padding: 15px; border-left: 4px solid #007bff; margin-bottom: 20px; border-radius: 0 4px 4px 0;}
-        .back-link { display: inline-block; margin-top: 20px; text-decoration: none; background-color: #6c757d; color: white; padding: 8px 15px; border-radius: 4px; }
-        .back-link:hover { background-color: #5a6268; }
+        /* Button container and button styles */
+        .button-container {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+            align-items: stretch;
+        }
+        
+        /* Style for both the link and form */
+        .button-container > a.back-link,
+        .button-container > .karakeep-form {
+            flex: 1;
+            margin: 0;
+        }
+        
+        /* Unified button styles */
+        .button-container a.back-link,
+        .button-container .karakeep-form button.karakeep-button {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 12px 15px;
+            font-size: 16px;
+            text-decoration: none;
+            background-color: #6c757d;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            box-sizing: border-box;
+            cursor: pointer;
+        }
+        
+        /* Hover state for both buttons */
+        .button-container a.back-link:hover,
+        .button-container .karakeep-form button.karakeep-button:hover {
+            background-color: #5a6268;
+        }
     </style>
 </head>
 <body>
@@ -39,7 +76,14 @@
             <div class="error">Could not generate summary for the provided URL.</div>
         {% endif %}
 
-        <a href="{{ url_for('index') }}" class="back-link">« Summarize Another URL</a>
+        <div class="button-container">
+            <a href="{{ url_for('index') }}" class="back-link btn">« Summarize Another URL</a>
+
+            <form method="POST" action="{{ url_for('send_to_karakeep') }}" class="karakeep-form">
+                <input type="hidden" name="original_url" value="{{ original_url }}">
+                <button type="submit" class="karakeep-button">Send Summary to Karakeep</button>
+            </form>
+        </div>
     </div>
 </body>
 </html>

@@ -92,11 +92,12 @@ The `.env` file within the `summarizer_app` directory controls the application's
     *   While logged in, drag the "Summarize Current Page" link from the main page to your browser's bookmarks bar.
     *   When viewing a page you want to summarize, click the bookmarklet. It will open the summarizer application in a new tab with the current page's URL pre-filled.
 4.  **Karakeep/Hoarder Integration:**
-    *   If configured in the `.env` file, check the "Send summary to Hoarder/Karakeep" checkbox before submitting a URL.
-    *   If the summary is generated successfully, the application will attempt to:
+    *   If configured in the `.env` file, you will see a "Send Summary to Karakeep" button on the summary result page after a summary is successfully generated.
+    *   Clicking this button will attempt to:
         1.  Generate a short title for the summary using the LLM.
         2.  Find the ID of the specified `KARAKEEP_LIST_NAME`.
         3.  Create a new bookmark/item in Karakeep/Hoarder with the title, summary (as Markdown text), and original URL, linking it to the specified list.
+    *   Feedback messages will be displayed on the next page indicating the success or failure of the Karakeep submission.
 
 ## License
 

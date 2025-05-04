@@ -566,11 +566,6 @@ def index():
         target_url = request.form.get('url')
         app.logger.info(f"Received URL via POST form: {target_url}")
 
-        # --- Save options to session ---
-        send_to_hoarder_checked = 'send_to_hoarder' in request.form # Checkbox is present if checked
-        session['send_to_hoarder_enabled'] = send_to_hoarder_checked
-        app.logger.info(f"Saved 'Send to Hoarder' option to session: {send_to_hoarder_checked}")
-        # -------------------------------
 
     elif request.method == 'GET':
         # Handle direct access or bookmarklet (query parameter) AFTER login
@@ -628,41 +623,6 @@ def index():
             return render_template('index.html', submitted_url=target_url, username=session.get('username'), send_to_hoarder_checked=send_to_hoarder_checked)
 
         # Success! Process Karakeep sending if enabled, then render summary page
-        karakeep_sent_ok = None # Track Karakeep status, None = not attempted, True = success, False = fail
-        if session.get('send_to_hoarder_enabled'):
-            app.logger.info(f"Karakeep option is enabled for {target_url}. Attempting to send.")
-            if KARAKEEP_ENABLED and llm:
-                # 1. Generate short title
-                karakeep_title = get_short_title_from_llm(summary) # Use original markdown summary
-
-                if karakeep_title:
-                    # 2. Get List ID
-                    karakeep_list_id = get_karakeep_list_id(KARAKEEP_API_URL, KARAKEEP_API_KEY, KARAKEEP_LIST_NAME)
-
-                    if karakeep_list_id:
-                        # 3. Send to Karakeep
-                        karakeep_sent_ok = send_summary_to_karakeep(
-                            KARAKEEP_API_URL, KARAKEEP_API_KEY, karakeep_list_id,
-                            karakeep_title, summary, target_url # Pass markdown summary and original URL
-                        )
-                        if karakeep_sent_ok:
-                            app.logger.info(f"Successfully sent summary for '{target_url}' to Karakeep list '{KARAKEEP_LIST_NAME}'.")
-                            # Optional: flash("Summary sent to Karakeep.", "success") # Might be too noisy
-                        else:
-                            app.logger.error(f"Failed to send summary for '{target_url}' to Karakeep list '{KARAKEEP_LIST_NAME}'. Check previous logs.")
-                            # Optional: flash("Failed to send summary to Karakeep.", "error")
-                    else:
-                        app.logger.error(f"Could not find Karakeep list ID for '{KARAKEEP_LIST_NAME}'. Cannot send summary.")
-                        karakeep_sent_ok = False
-                else:
-                    app.logger.error("Could not generate title for Karakeep. Cannot send summary.")
-                    karakeep_sent_ok = False
-            else:
-                app.logger.warning("Karakeep sending skipped: Integration is disabled in config or LLM is unavailable.")
-                karakeep_sent_ok = False
-        else:
-            app.logger.info(f"Karakeep option is NOT enabled for {target_url}.")
-
         # Regardless of Karakeep outcome, proceed to render the summary page
         app.logger.info(f"Successfully generated summary (Markdown) for: {target_url} (Type: {'YouTube' if is_youtube else 'WebPage'})")
         summary_html = markdown.markdown(summary) # Convert Markdown to HTML
@@ -683,6 +643,72 @@ def health_check():
     # Basic check - more elaborate checks could test LLM connectivity etc.
     return "OK", 200
 
+
+@app.route('/send_to_karakeep', methods=['POST'])
+@login_required # Protect this route
+def send_to_karakeep():
+    """Handles sending the current summary to Karakeep."""
+    if not KARAKEEP_ENABLED:
+        flash("Karakeep integration is not enabled.", "error")
+        return redirect(url_for('index')) # Or redirect back to summary?
+
+    original_url = request.form.get('original_url')
+    if not original_url:
+        flash("Missing original URL for Karakeep submission.", "error")
+        return redirect(url_for('index')) # Or redirect back to summary?
+
+    # Re-fetch content and generate summary (can be optimized by passing summary from index)
+    content = None
+    summary = None
+    is_youtube = False
+    video_id = is_youtube_url(original_url)
+
+    if video_id:
+        is_youtube = True
+        content = fetch_youtube_transcript(video_id)
+        if content is None:
+            flash("Could not fetch transcript for Karakeep submission.", "error")
+            return redirect(url_for('index')) # Or redirect back to summary?
+        summary = get_summary_from_llm(content, original_url, is_youtube=True)
+    else:
+        content = fetch_page_content(original_url)
+        if content is None:
+            flash("Could not fetch content for Karakeep submission.", "error")
+            return redirect(url_for('index')) # Or redirect back to summary?
+        summary = get_summary_from_llm(content, original_url, is_youtube=False)
+
+    if summary is None:
+        flash("Failed to re-generate summary for Karakeep submission.", "error")
+        return redirect(url_for('index')) # Or redirect back to summary?
+
+    # Proceed with Karakeep submission
+    karakeep_title = get_short_title_from_llm(summary)
+
+    if not karakeep_title:
+        flash("Failed to generate title for Karakeep.", "error")
+        return redirect(url_for('index')) # Or redirect back to summary?
+
+    karakeep_list_id = get_karakeep_list_id(KARAKEEP_API_URL, KARAKEEP_API_KEY, KARAKEEP_LIST_NAME)
+
+    if not karakeep_list_id:
+        flash(f"Could not find Karakeep list '{KARAKEEP_LIST_NAME}'.", "error")
+        return redirect(url_for('index')) # Or redirect back to summary?
+
+    karakeep_sent_ok = send_summary_to_karakeep(
+        KARAKEEP_API_URL, KARAKEEP_API_KEY, karakeep_list_id,
+        karakeep_title, summary, original_url
+    )
+
+    if karakeep_sent_ok:
+        flash(f"Summary successfully sent to Karakeep list '{KARAKEEP_LIST_NAME}'.", "success")
+    else:
+        flash(f"Failed to send summary to Karakeep list '{KARAKEEP_LIST_NAME}'. Check logs.", "error")
+
+    # Redirect back to the summary page (or index)
+    # To redirect back to the summary page, you'd need to pass the summary content
+    # in the redirect, which isn't standard for GET redirects.
+    # Redirecting to index is simpler for now.
+    return redirect(url_for('index'))
 
 if __name__ == '__main__':
     # This block is NOT used when running with Gunicorn/Docker CMD

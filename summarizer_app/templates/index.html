@@ -46,11 +46,7 @@
             <input type="url" id="url" name="url" required placeholder="https://example.com" value="{{ submitted_url or '' }}">
             <button type="submit">Summarize</button>
 
-            <div class="options-section">
-                <strong>Options:</strong><br>
-                <input type="checkbox" id="send_to_hoarder" name="send_to_hoarder" value="yes" {% if send_to_hoarder_checked %}checked{% endif %}>
-                <label for="send_to_hoarder">Send summary to Hoarder/Karakeep</label>
-            </div>
+
         </form> <!-- Moved the closing form tag to wrap the options -->
 
 
