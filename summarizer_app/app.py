@@ -5,6 +5,8 @@ import functools
 import re # For regex matching (YouTube video ID)
 import json # For parsing JSON responses, especially errors
 import markdown # Import the markdown library
+import uuid # For generating unique summary IDs
+from tempfile import gettempdir # For temporary storage
 from bs4 import BeautifulSoup
 import google.generativeai as genai
 from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled, NoTranscriptFound # YouTube transcript fetching
@@ -104,6 +106,44 @@ def login_required(view):
 
 # --- Helper Functions ---
 
+def get_temp_summary_path(summary_id):
+    """Get the path to the temporary summary file."""
+    return os.path.join(gettempdir(), f"web_summarizer_{summary_id}.json")
+
+def store_summary_data(summary_data):
+    """Store summary data in a temporary file and return a unique ID."""
+    summary_id = str(uuid.uuid4())
+    temp_path = get_temp_summary_path(summary_id)
+    
+    with open(temp_path, 'w', encoding='utf-8') as f:
+        json.dump(summary_data, f, ensure_ascii=False)
+    
+    return summary_id
+
+def retrieve_summary_data(summary_id):
+    """Retrieve summary data from a temporary file and delete the file."""
+    temp_path = get_temp_summary_path(summary_id)
+    
+    if not os.path.exists(temp_path):
+        return None
+    
+    try:
+        with open(temp_path, 'r', encoding='utf-8') as f:
+            summary_data = json.load(f)
+        
+        # Clean up the temp file
+        os.remove(temp_path)
+        return summary_data
+    except Exception as e:
+        app.logger.error(f"Error retrieving summary data: {e}")
+        # If we can't read the file, try to clean it up anyway
+        try:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+        except Exception:
+            pass
+        return None
+
 def is_valid_url(url_string: str) -> bool:
     """Basic URL validation focusing on scheme and network location."""
     if not url_string:
@@ -138,8 +178,28 @@ def fetch_youtube_transcript(video_id: str) -> str | None:
     """Fetches the transcript for a given YouTube video ID."""
     app.logger.info(f"Attempting to fetch transcript for YouTube video ID: {video_id}")
     try:
+        # Add timeout handling using a simple timeout context manager
+        import signal
+        
+        class TimeoutException(Exception):
+            pass
+            
+        def timeout_handler(signum, frame):
+            raise TimeoutException("Transcript fetching timed out")
+            
+        # Set a 60-second timeout for transcript operations
+        signal.signal(signal.SIGALRM, timeout_handler)
+        signal.alarm(60)
+        
+        app.logger.info(f"Fetching available transcripts for {video_id}")
         # Fetch available transcripts
-        transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+        try:
+            transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+            app.logger.info(f"Successfully retrieved transcript list for {video_id}")
+        except Exception as e:
+            app.logger.error(f"Failed to retrieve transcript list: {e}")
+            signal.alarm(0)  # Cancel the alarm
+            raise
 
         # Try to find a manually created transcript first, otherwise get a generated one
         # Prioritize English ('en') or common variants if available
@@ -147,59 +207,74 @@ def fetch_youtube_transcript(video_id: str) -> str | None:
         transcript = None
         try:
             # Check manually created transcripts first
+            app.logger.info(f"Looking for manually created transcript in preferred languages")
             transcript = transcript_list.find_manually_created_transcript(preferred_languages)
             app.logger.info(f"Found manually created transcript for {video_id}.")
         except NoTranscriptFound:
             app.logger.info(f"No manual transcript found for {video_id}, checking generated.")
             try:
                 # Check generated transcripts
+                app.logger.info(f"Looking for auto-generated transcript in preferred languages")
                 transcript = transcript_list.find_generated_transcript(preferred_languages)
                 app.logger.info(f"Found auto-generated transcript for {video_id}.")
             except NoTranscriptFound:
-                 app.logger.warning(f"No suitable English transcript (manual or generated) found for video ID: {video_id}. Checking any language.")
-                 # If no preferred language found, fetch the first available transcript regardless of language
-                 # This might be less ideal but better than nothing.
-                 try:
-                     first_transcript = list(transcript_list)[0] # Get the first Transcript object
-                     transcript = first_transcript
-                     app.logger.info(f"Found transcript in language: {transcript.language} for {video_id}.")
-                 except IndexError:
-                      app.logger.error(f"Transcript list seems empty for video ID: {video_id}")
-                      return None
-
+                app.logger.warning(f"No suitable English transcript found for {video_id}. Checking any language.")
+                # If no preferred language found, fetch the first available transcript regardless of language
+                try:
+                    app.logger.info(f"Attempting to use first available transcript in any language")
+                    first_transcript = list(transcript_list)[0]  # Get the first Transcript object
+                    transcript = first_transcript
+                    app.logger.info(f"Found transcript in language: {transcript.language} for {video_id}.")
+                except IndexError:
+                    app.logger.error(f"Transcript list seems empty for video ID: {video_id}")
+                    signal.alarm(0)  # Cancel the alarm
+                    return None
 
         # Fetch the actual transcript data
+        app.logger.info(f"Fetching actual transcript data for {video_id}")
         transcript_data = transcript.fetch()
+        app.logger.info(f"Successfully fetched raw transcript data ({len(transcript_data)} segments)")
 
         # Format the transcript data into a single string (robustly)
         texts = []
         for item in transcript_data:
             if isinstance(item, dict):
-                texts.append(item.get('text', '')) # Use .get for safety if 'text' key is missing
+                texts.append(item.get('text', ''))  # Use .get for safety if 'text' key is missing
             elif hasattr(item, 'text'):
-                 # If it's an object with a 'text' attribute (like FetchedTranscriptSnippet might be)
-                 texts.append(getattr(item, 'text', ''))
+                # If it's an object with a 'text' attribute
+                texts.append(getattr(item, 'text', ''))
             else:
-                 # Log if the item structure is unexpected
-                 app.logger.warning(f"Unexpected item type or structure in transcript data for {video_id}: {type(item)}")
+                # Log if the item structure is unexpected
+                app.logger.warning(f"Unexpected item type in transcript data: {type(item)}")
 
         full_transcript = " ".join(texts)
         # Clean up potential multiple spaces resulting from joining
         full_transcript = ' '.join(full_transcript.split())
 
-        if not full_transcript:
-             app.logger.warning(f"Formatted transcript is empty for video ID: {video_id}. Original data might have been empty or malformed.")
-             # Optionally return None or empty string based on desired behavior
-             # return None
+        # Limit transcript size to prevent timeouts in processing
+        MAX_TRANSCRIPT_CHARS = 75000  # 75K characters for longer videos
+        if len(full_transcript) > MAX_TRANSCRIPT_CHARS:
+            app.logger.warning(f"Transcript too large ({len(full_transcript)} chars). Truncating to {MAX_TRANSCRIPT_CHARS}.")
+            full_transcript = full_transcript[:MAX_TRANSCRIPT_CHARS] + "... [Transcript truncated due to size]"
 
-        app.logger.info(f"Successfully fetched and formatted transcript (length: {len(full_transcript)}) for video ID: {video_id}")
+        if not full_transcript:
+            app.logger.warning(f"Formatted transcript is empty for video ID: {video_id}")
+            signal.alarm(0)  # Cancel the alarm
+            return None
+
+        app.logger.info(f"Successfully processed transcript (length: {len(full_transcript)}) for {video_id}")
+        
+        # Cancel the timeout alarm
+        signal.alarm(0)
         return full_transcript
 
+    except TimeoutException:
+        app.logger.error(f"Timed out while fetching transcript for YouTube video ID: {video_id}")
+        return None
     except TranscriptsDisabled:
         app.logger.warning(f"Transcripts are disabled for YouTube video ID: {video_id}")
         return None
     except NoTranscriptFound:
-        # This case might be covered above, but added for robustness
         app.logger.warning(f"Could not find any transcript for YouTube video ID: {video_id}")
         return None
     except Exception as e:
@@ -215,32 +290,47 @@ def fetch_page_content(url: str) -> str | None:
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36 SummarizerBot/1.0'
     }
     try:
-        response = requests.get(url, headers=headers, timeout=20, allow_redirects=True)
+        app.logger.info(f"Sending HTTP request to {url}")
+        # Increased timeout from 20s to 45s for larger pages
+        response = requests.get(url, headers=headers, timeout=45, allow_redirects=True)
         response.raise_for_status()
+        app.logger.info(f"Received response from {url} ({len(response.text)} bytes)")
 
         content_type = response.headers.get('Content-Type', '').lower()
         if 'text/html' not in content_type:
             app.logger.warning(f"Non-HTML content type received: {content_type} for URL: {url}")
             return None
 
+        app.logger.info(f"Parsing HTML content with BeautifulSoup")
         soup = BeautifulSoup(response.text, 'lxml')
+        app.logger.info(f"Removing script and style tags")
         for script_or_style in soup(["script", "style"]):
             script_or_style.extract()
 
         body = soup.find('body')
         if body:
+            app.logger.info(f"Extracting text from body tag")
             text = body.get_text(separator=' ', strip=True)
             text = ' '.join(text.split())
-            app.logger.info(f"Successfully extracted ~{len(text)} characters from {url}")
-            # MAX_CHARS = 500000
-            # if len(text) > MAX_CHARS:
-            #    app.logger.warning(f"Truncating content from {url} to {MAX_CHARS} characters.")
-            #    text = text[:MAX_CHARS] + "..."
+            
+            # Limit content size to prevent timeouts
+            MAX_CHARS = 100000  # Limit to 100K characters
+            if len(text) > MAX_CHARS:
+                app.logger.warning(f"Content too large ({len(text)} chars). Truncating to {MAX_CHARS} characters.")
+                text = text[:MAX_CHARS] + "... [Content truncated due to size]"
+            
+            app.logger.info(f"Successfully extracted {len(text)} characters from {url}")
             return text
         else:
             app.logger.warning(f"Could not find body tag in content from {url}")
             return None
 
+    except requests.exceptions.Timeout:
+        app.logger.error(f"Request timed out for URL {url} (took longer than 45 seconds)")
+        return None
+    except requests.exceptions.ConnectionError:
+        app.logger.error(f"Connection error for URL {url} - site may be down or blocking requests")
+        return None
     except RequestException as e:
         app.logger.error(f"Request failed for URL {url}: {e}")
         return None
@@ -258,7 +348,17 @@ def get_summary_from_llm(content: str, source_url: str, is_youtube: bool = False
         app.logger.warning("No content provided to summarize.")
         return None
 
-    app.logger.info(f"Sending content (length: {len(content)}, type: {'YouTube' if is_youtube else 'WebPage'}) to Gemini for summarization.")
+    # Track start time for operation timing
+    import time
+    start_time = time.time()
+    
+    # Ensure content isn't too large for API processing
+    MAX_CONTENT_LENGTH = 80000  # 80K chars should be safe for most LLM APIs
+    if len(content) > MAX_CONTENT_LENGTH:
+        app.logger.warning(f"Content too large for LLM API ({len(content)} chars). Truncating to {MAX_CONTENT_LENGTH} chars.")
+        content = content[:MAX_CONTENT_LENGTH] + "... [Content truncated due to size]"
+    
+    app.logger.info(f"Preparing to send content (length: {len(content)}, type: {'YouTube' if is_youtube else 'WebPage'}) to Gemini")
 
     if is_youtube:
         prompt = f"""You are a helpful AI assistant that connects to YouTube videos, downloads their transcripts, and provides detailed summaries. Your goal is to create comprehensive and easy-to-understand summaries, highlighting all key points discussed.
@@ -297,24 +397,58 @@ Content:
 
 Summary:"""
 
+    app.logger.info(f"Sending request to Gemini API (prompt length: {len(prompt)})")
+    
     try:
-        response = llm.generate_content(prompt)
-
-        if response.candidates and response.candidates[0].content and response.candidates[0].content.parts:
-             summary = response.candidates[0].content.parts[0].text
-             app.logger.info(f"Successfully generated summary from Gemini.")
-             return summary.strip()
-        else:
-             try:
-                 finish_reason = response.candidates[0].finish_reason if response.candidates else "Unknown"
-                 safety_ratings = response.prompt_feedback.safety_ratings if response.prompt_feedback else "N/A"
-                 app.logger.error(f"Gemini API returned unexpected or empty response. Finish Reason: {finish_reason}, Safety: {safety_ratings}. Response: {response}")
-             except Exception:
-                 app.logger.error(f"Gemini API returned unexpected or empty response. Could not parse details. Response: {response}")
-             return None
-
+        # Import necessary timeout handling
+        import concurrent.futures
+        from concurrent.futures import TimeoutError as FuturesTimeoutError
+        import google.api_core.exceptions
+        
+        # Set proper generation config (without invalid timeout parameter)
+        generation_config = {
+            "temperature": 0.7,
+            "top_p": 0.95
+        }
+        
+        # Use ThreadPoolExecutor to implement timeout
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            # Create a future for the API call
+            future = executor.submit(lambda: llm.generate_content(prompt, generation_config=generation_config))
+            
+            try:
+                # Wait for the result with a timeout
+                app.logger.info("Starting LLM API call with 90 second timeout")
+                response = future.result(timeout=90)  # 90 second timeout
+                
+                elapsed_time = time.time() - start_time
+                app.logger.info(f"Gemini API call completed in {elapsed_time:.2f} seconds")
+                
+                if response.candidates and response.candidates[0].content and response.candidates[0].content.parts:
+                    summary = response.candidates[0].content.parts[0].text
+                    app.logger.info(f"Successfully generated summary from Gemini ({len(summary)} chars)")
+                    return summary.strip()
+                else:
+                    try:
+                        finish_reason = response.candidates[0].finish_reason if response.candidates else "Unknown"
+                        safety_ratings = response.prompt_feedback.safety_ratings if response.prompt_feedback else "N/A"
+                        app.logger.error(f"Gemini API returned unexpected or empty response. Finish Reason: {finish_reason}, Safety: {safety_ratings}")
+                    except Exception:
+                        app.logger.error(f"Gemini API returned unexpected or empty response. Could not parse details.")
+                    return None
+                    
+            except FuturesTimeoutError:
+                app.logger.error("Gemini API request timed out (exceeded 90 seconds)")
+                # Cancel the future if possible
+                future.cancel()
+                return None
+            except google.api_core.exceptions.DeadlineExceeded:
+                app.logger.error("Gemini API request exceeded deadline")
+                return None
+                
     except Exception as e:
-        app.logger.error(f"Error calling Gemini API: {e}")
+        elapsed_time = time.time() - start_time
+        app.logger.error(f"Error calling Gemini API after {elapsed_time:.2f} seconds: {e}")
         return None
 
 def get_short_title_from_llm(summary_text: str) -> str | None:
@@ -337,19 +471,45 @@ Text to summarize into a title:
 Concise Title (less than 10 words):""" # Limit input length just in case
 
     try:
-        response = llm.generate_content(prompt)
-        if response.candidates and response.candidates[0].content and response.candidates[0].content.parts:
-             title = response.candidates[0].content.parts[0].text.strip()
-             # Basic cleanup: remove potential quotes, ensure reasonable length
-             title = title.strip('"\'')
-             if len(title.split()) > 12: # Allow slightly more than 10 just in case
-                 app.logger.warning(f"LLM generated title longer than expected: '{title}'. Truncating.")
-                 title = " ".join(title.split()[:10]) + "..."
-             app.logger.info(f"Successfully generated short title: '{title}'")
-             return title
-        else:
-             app.logger.error(f"LLM failed to generate a short title. Response: {response}")
-             return None
+        # Import necessary timeout handling
+        import concurrent.futures
+        from concurrent.futures import TimeoutError as FuturesTimeoutError
+        
+        # Set proper generation config
+        generation_config = {
+            "temperature": 0.7,
+            "top_p": 0.95
+        }
+        
+        # Use ThreadPoolExecutor to implement timeout
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            # Create a future for the API call
+            future = executor.submit(lambda: llm.generate_content(prompt, generation_config=generation_config))
+            
+            try:
+                # Wait for the result with a timeout
+                app.logger.info("Starting LLM title generation with 30 second timeout")
+                response = future.result(timeout=30)  # 30 second timeout for title generation
+                
+                if response.candidates and response.candidates[0].content and response.candidates[0].content.parts:
+                    title = response.candidates[0].content.parts[0].text.strip()
+                    # Basic cleanup: remove potential quotes, ensure reasonable length
+                    title = title.strip('"\'')
+                    if len(title.split()) > 12: # Allow slightly more than 10 just in case
+                        app.logger.warning(f"LLM generated title longer than expected: '{title}'. Truncating.")
+                        title = " ".join(title.split()[:10]) + "..."
+                    app.logger.info(f"Successfully generated short title: '{title}'")
+                    return title
+                else:
+                    app.logger.error(f"LLM failed to generate a short title. Response: {response}")
+                    return None
+                    
+            except FuturesTimeoutError:
+                app.logger.error("Gemini API title generation timed out (exceeded 30 seconds)")
+                # Cancel the future if possible
+                future.cancel()
+                return None
+                
     except Exception as e:
         app.logger.error(f"Error calling Gemini API for title generation: {e}")
         return None
@@ -570,6 +730,10 @@ def index():
 @login_required
 def summarize_ajax():
     """Handles AJAX request for summarization."""
+    # Log request starting time for tracking long-running operations
+    import time
+    start_time = time.time()
+    
     if not request.is_json:
         app.logger.warning("Received non-JSON request on /summarize_ajax endpoint.")
         return jsonify({'status': 'error', 'message': 'Invalid request format. Expected JSON.'}), 400
@@ -618,19 +782,29 @@ def summarize_ajax():
             app.logger.error(f"Failed to get summary from LLM for URL: {target_url} (Type: {'YouTube' if is_youtube else 'WebPage'})")
             return jsonify({'status': 'error', 'message': 'Failed to generate summary. LLM might be unavailable or had an issue.'}), 500 # Internal server error likely
 
-        # Success! Store results in session for the next request
+        # Success! Generate HTML and store results in temporary file
         app.logger.info(f"Successfully generated summary (Markdown) for: {target_url}")
         summary_html = markdown.markdown(summary) # Convert Markdown to HTML
         app.logger.info(f"Converted summary to HTML.")
 
-        # Store necessary data in session to be retrieved by /show_summary
-        session['summary_result'] = {
+        # Store the summary data in a temporary file and keep just the ID in the session
+        summary_data = {
             'original_url': target_url,
             'summary_html': summary_html,
             'summary_markdown': summary # Store markdown for Karakeep if needed later
         }
-
-        return jsonify({'status': 'success', 'redirect_url': url_for('show_summary')})
+        
+        try:
+            # Store data in temp file and get ID
+            summary_id = store_summary_data(summary_data)
+            # Store only the ID in session (very small)
+            session['summary_id'] = summary_id
+            app.logger.info(f"Stored summary with ID {summary_id} in temporary file")
+            
+            return jsonify({'status': 'success', 'redirect_url': url_for('show_summary')})
+        except Exception as e:
+            app.logger.error(f"Failed to store summary data: {e}", exc_info=True)
+            return jsonify({'status': 'error', 'message': 'Server error: Failed to store summary data.'}), 500
 
     except Exception as e:
         # Catch any unexpected errors during the process
@@ -641,13 +815,24 @@ def summarize_ajax():
 @app.route('/show_summary')
 @login_required
 def show_summary():
-    """Displays the summary result retrieved from the session."""
-    summary_data = session.pop('summary_result', None) # Retrieve and remove from session
+    """Displays the summary result retrieved from temporary storage."""
+    # Get the summary ID from session
+    summary_id = session.pop('summary_id', None)
 
-    if not summary_data:
-        app.logger.warning("Accessed /show_summary without summary data in session.")
+    if not summary_id:
+        app.logger.warning("Accessed /show_summary without summary ID in session.")
         flash("No summary data found. Please generate a summary first.", "info")
         return redirect(url_for('index'))
+
+    # Retrieve the summary data using the ID
+    summary_data = retrieve_summary_data(summary_id)
+
+    if not summary_data:
+        app.logger.warning(f"Could not retrieve summary data for ID: {summary_id}")
+        flash("Summary data could not be retrieved. Please try again.", "error")
+        return redirect(url_for('index'))
+
+    app.logger.info(f"Successfully retrieved summary data for ID: {summary_id}")
 
     # Render the summary template with the retrieved data
     return render_template(

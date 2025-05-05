@@ -73,7 +73,7 @@
                 {{ summary_html | safe }} {# Render the pre-converted HTML #}
             </div>
         {% else %}
-            <div class="error">Could not generate summary for the provided URL.</div>
+            <div class="error">Could not generate summary for the provided URL. This may happen if the data was too large or the server was restarted.</div>
         {% endif %}
 
         <div class="button-container">

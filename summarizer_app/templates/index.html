@@ -33,6 +33,11 @@
             border: 1px solid #bce8f1;
             border-radius: 4px;
         }
+        #loading-indicator.extended-wait {
+            color: #856404;
+            background-color: #fff3cd;
+            border-color: #ffeeba;
+        }
         /* Ensure error class from flash matches JS-added errors */
         .error {
             color: #a94442;
@@ -111,38 +116,89 @@
             // Clear previous errors and show loading indicator
             clearErrors();
             loadingIndicator.style.display = 'block';
+            loadingIndicator.textContent = "Processing... Please wait.";
             submitButton.disabled = true;
             submitButton.textContent = 'Processing...';
+            
+            // Set up progress updates for long-running requests
+            let processingTime = 0;
+            const progressInterval = setInterval(() => {
+                processingTime += 5;
+                
+                if (processingTime === 10) {
+                    loadingIndicator.textContent = "Fetching content from the URL...";
+                } else if (processingTime === 30) {
+                    loadingIndicator.textContent = "Still working... Processing content...";
+                    loadingIndicator.classList.add('extended-wait');
+                } else if (processingTime === 60) {
+                    loadingIndicator.textContent = "Processing large content... This may take another minute.";
+                } else if (processingTime === 90) {
+                    loadingIndicator.textContent = "Almost done... Finalizing summary.";
+                }
+                
+                if (processingTime >= 120) {
+                    clearInterval(progressInterval);
+                }
+            }, 5000); // Update every 5 seconds
 
             try {
+                // Create AbortController for fetch timeout
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 120000); // 120 second timeout (2 minutes)
+                
+                loadingIndicator.textContent = "Processing request... This may take up to 2 minutes for large content.";
+                
                 const response = await fetch("{{ url_for('summarize_ajax') }}", {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                         'Accept': 'application/json' // Indicate we expect JSON back
                     },
-                    body: JSON.stringify({ url: url })
+                    body: JSON.stringify({ url: url }),
+                    signal: controller.signal // Add abort controller signal
                 });
+                
+                // Clear timeout if request completes
+                clearTimeout(timeoutId);
 
-                const data = await response.json();
-
-                if (response.ok && data.status === 'success') {
-                    // Redirect to the summary page on success
-                    window.location.href = data.redirect_url;
-                    // No need to hide loading indicator here as page redirects
-                } else if (data.status === 'error') {
-                    // Display error message from backend
-                    displayError(data.message || "An unknown error occurred.");
+                // Check for common HTTP error codes first
+                if (response.status === 413) {
+                    displayError("The content from this URL is too large to process. Try a different URL.");
                     hideLoading();
-                } else {
-                    // Handle non-JSON errors or unexpected status
-                    displayError(`Server error: ${response.statusText || 'Unknown error'}`);
+                    return;
+                }
+
+                try {
+                    // Attempt to parse JSON response (might fail for very large responses)
+                    const data = await response.json();
+
+                    if (response.ok && data.status === 'success') {
+                        // Redirect to the summary page on success
+                        window.location.href = data.redirect_url;
+                        // No need to hide loading indicator here as page redirects
+                    } else if (data.status === 'error') {
+                        // Display error message from backend
+                        displayError(data.message || "An unknown error occurred.");
+                        hideLoading();
+                    } else {
+                        // Handle non-JSON errors or unexpected status
+                        displayError(`Server error: ${response.statusText || 'Unknown error'}`);
+                        hideLoading();
+                    }
+                } catch (parseError) {
+                    // Handle JSON parsing errors (could happen with very large responses)
+                    console.error("JSON parse error:", parseError);
+                    displayError("Server returned an invalid response. The content might be too large to process.");
                     hideLoading();
                 }
             } catch (error) {
                 // Handle network errors or fetch failures
                 console.error("Fetch error:", error);
-                displayError("Failed to connect to the server. Please check your network.");
+                if (error.name === 'AbortError') {
+                    displayError("Request timed out after 2 minutes. The content might be too large to process.");
+                } else {
+                    displayError("Failed to connect to the server. Please check your network.");
+                }
                 hideLoading();
             }
         });
@@ -163,8 +219,18 @@
             existingFlashed.forEach(el => el.remove());
         }
 
+        // Store progress interval globally to clear it from any function
+        let progressIntervalId = null;
+        
         function hideLoading() {
+             // Clear any running progress interval
+             if (progressIntervalId) {
+                 clearInterval(progressIntervalId);
+                 progressIntervalId = null;
+             }
+             
              loadingIndicator.style.display = 'none';
+             loadingIndicator.classList.remove('extended-wait');
              submitButton.disabled = false;
              submitButton.textContent = 'Summarize';
         }

@@ -32,5 +32,6 @@ EXPOSE 5000
 # Command to run the application using Gunicorn
 # bind 0.0.0.0:5000 makes it accessible from outside the container
 # workers 2: Adjust based on your expected load and container resources
+# timeout 180: Increased from default 30s to handle large content processing
 # app:app refers to the Flask app instance named 'app' in 'app.py'
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "app:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "--timeout", "180", "app:app"]
