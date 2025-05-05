@@ -239,6 +239,21 @@
         // We keep flashed messages displayed by Jinja initially, JS clears/adds errors on submit
         // clearErrors(); // Optional: uncomment if you want JS to always clear flashed messages on load
 
+        // Auto-submit when accessed via bookmarklet (URL is pre-filled)
+        document.addEventListener('DOMContentLoaded', function() {
+            // Check if URL input has a value on page load (from bookmarklet)
+            const urlFromParams = urlInput.value.trim();
+            if (urlFromParams && window.location.search.includes('url=')) {
+                console.log('URL detected from bookmarklet, auto-submitting form');
+                // Short delay to allow page to fully load
+                setTimeout(() => {
+                    // Dispatch submit event to trigger the existing form handler
+                    const submitEvent = new Event('submit', { bubbles: true, cancelable: true });
+                    form.dispatchEvent(submitEvent);
+                }, 300);
+            }
+        });
+
     </script>
 </body>
 </html>
