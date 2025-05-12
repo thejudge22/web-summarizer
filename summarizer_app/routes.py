@@ -1,12 +1,10 @@
 # ABOUTME: Contains all Flask route handlers for the application.
-# ABOUTME: Handles user authentication, summarization, and Karakeep integration.
+# ABOUTME: Handles summarization and Karakeep integration.
 
 import logging
 import markdown
 from flask import Flask, request, render_template, abort, flash, get_flashed_messages, session, redirect, url_for, jsonify
-from werkzeug.security import generate_password_hash, check_password_hash
 from config import Config
-from auth import login_required
 from llm import get_summary_from_llm, get_short_title_from_llm
 from youtube import is_youtube_url, fetch_youtube_transcript
 from web_content import is_valid_url, fetch_page_content
@@ -23,62 +21,13 @@ app = Flask(__name__)
 app.secret_key = Config.FLASK_SECRET_KEY or os.urandom(24)
 
 # Admin credentials
-ADMIN_USERNAME = Config.ADMIN_USERNAME
-ADMIN_PASSWORD_PLAIN = Config.ADMIN_PASSWORD
-ADMIN_PASSWORD_HASH = generate_password_hash(ADMIN_PASSWORD_PLAIN) if ADMIN_PASSWORD_PLAIN else None
 
 # Karakeep configuration
 KARAKEEP_ENABLED = Config.KARAKEEP_ENABLED  # Use the value from Config class
 
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    """Handles user login."""
-    # If user is already logged in, redirect them away from login page
-    if 'logged_in' in session:
-        flash("You are already logged in.", "info")
-        return redirect(url_for('index'))
 
-    if request.method == 'POST':
-        username = request.form.get('username')
-        password = request.form.get('password')
-        next_url = request.form.get('next') # Get redirect target from hidden field
-
-        # Validate credentials (ensure hash was created)
-        if ADMIN_PASSWORD_HASH and username == ADMIN_USERNAME and check_password_hash(ADMIN_PASSWORD_HASH, password):
-            session['logged_in'] = True
-            session['username'] = username
-            logging.info(f"User '{username}' logged in successfully.")
-            flash(f"Welcome back, {username}!", "success")
-
-            # Redirect to the originally requested page or index
-            # Basic validation for the next_url to prevent open redirect
-            # A more robust check would parse the URL and ensure it has the same host/origin.
-            if next_url and urlparse(next_url).netloc == urlparse(request.host_url).netloc:
-                 logging.info(f"Redirecting logged in user to intended destination: {next_url}")
-                 return redirect(next_url)
-            else:
-                 logging.info(f"Redirecting logged in user to index (no valid 'next' URL provided or external URL detected).")
-                 return redirect(url_for('index'))
-        else:
-            logging.warning(f"Failed login attempt for username: {username}")
-            flash("Invalid username or password.", "error")
-            # No redirect here, fall through to render login template again
-
-    # For GET request or failed POST, render login form
-    # Pass the 'next' parameter to the template if it exists in the GET request args
-    return render_template('login.html', next=request.args.get('next', ''))
-
-@app.route('/logout')
-def logout():
-    """Logs the user out."""
-    session.pop('logged_in', None)
-    session.pop('username', None)
-    logging.info("User logged out.")
-    flash("You have been logged out.", "success")
-    return redirect(url_for('login'))
 
 @app.route('/', methods=['GET']) # Only handle GET requests now
-@login_required # Protect this route
 def index():
     """Handles displaying the form and pre-filling from query params (e.g., bookmarklet)."""
     target_url = request.args.get('url') # Check for URL from query param
@@ -91,11 +40,10 @@ def index():
              target_url = None # Don't pre-fill invalid URL
 
     # Render the main form page
-    # Pass the potentially pre-filled URL and username
-    return render_template('index.html', submitted_url=target_url, username=session.get('username'))
+    # Pass the potentially pre-filled URL
+    return render_template('index.html', submitted_url=target_url)
 
 @app.route('/summarize_ajax', methods=['POST'])
-@login_required
 def summarize_ajax():
     """Handles AJAX request for summarization."""
     # Log request starting time for tracking long-running operations
@@ -180,7 +128,6 @@ def summarize_ajax():
         return jsonify({'status': 'error', 'message': 'An unexpected server error occurred.'}), 500
 
 @app.route('/show_summary')
-@login_required
 def show_summary():
     """Displays the summary result retrieved from temporary storage."""
     # Get the summary ID from session
@@ -206,8 +153,7 @@ def show_summary():
         'summary.html',
         original_url=summary_data.get('original_url'),
         summary_html=summary_data.get('summary_html'),
-        summary_markdown=summary_data.get('summary_markdown'), # Pass markdown to template
-        username=session.get('username') # Pass username for logout link
+        summary_markdown=summary_data.get('summary_markdown') # Pass markdown to template
     )
 
 # Optional: Add a simple health check endpoint (unprotected)
@@ -217,7 +163,6 @@ def health_check():
     return "OK", 200
 
 @app.route('/send_to_karakeep', methods=['POST'])
-@login_required # Protect this route
 def send_to_karakeep():
     """Handles sending the current summary to Karakeep."""
     if not KARAKEEP_ENABLED:

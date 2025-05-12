@@ -75,9 +75,6 @@
 </head>
 <body>
     <div class="container">
-        {% if username %}
-            <a href="{{ url_for('logout') }}" class="logout-link">Logout ({{ username }})</a>
-        {% endif %}
         <h1>Summarize a Web Page</h1>
 
         {% with messages = get_flashed_messages(with_categories=true) %}
@@ -105,7 +102,7 @@
 
 
         <div class="bookmarklet-info">
-            <strong>Bookmarklet:</strong> Drag the following link to your bookmarks bar or right-click and "Bookmark This Link" to quickly summarize the current page (you must be logged in first):
+            <strong>Bookmarklet:</strong> Drag the following link to your bookmarks bar or right-click and "Bookmark This Link" to quickly summarize the current page (make sure the service is running and accessible):
             <p>
                 <a href="javascript:void(window.open('{{ url_for('index', _external=True) }}?url='+encodeURIComponent(location.href)));">Summarize Current Page</a>
             </p>
