@@ -5,7 +5,7 @@ ABOUTME: Focused on Docker-based deployment and environment configuration for Gi
 
 # Web Summarizer
 
-A simple web application that summarizes web pages and YouTube videos using the OpenAI API. Includes basic authentication, a bookmarklet for quick summarizing, and optional integration with [Karakeep/Hoarder](https://karakeep.app)).
+A simple web application that summarizes web pages and YouTube videos using the OpenAI API. Includes basic authentication, a bookmarklet for quick summarizing, and optional integration with [Karakeep/Hoarder](https://karakeep.app).
 
 ---
 
