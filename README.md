@@ -1,110 +1,123 @@
+<!--
+ABOUTME: This file provides setup, configuration, and usage instructions for the Web Summarizer app.
+ABOUTME: Focused on Docker-based deployment and environment configuration for GitHub users.
+-->
+
 # Web Summarizer
 
-A simple web application that summarizes web pages and YouTube videos using the OpenAI API. It includes basic authentication, a bookmarklet for quick summarizing, and optional integration with Karakeep
+A simple web application that summarizes web pages and YouTube videos using the OpenAI API. Includes basic authentication, a bookmarklet for quick summarizing, and optional integration with [Karakeep/Hoarder](https://karakeep.app)).
+
+---
 
 ## Features
 
-*   Summarize content from any publicly accessible URL.
-*   Summarize YouTube videos by fetching and processing their transcripts.
-*   Uses the OpenAI API with a configurable model (defaulting to `gpt-4.1-mini`).
-*   Simple web interface built with Flask.
-*   Bookmarklet to quickly summarize the currently viewed page.
-*   Basic username/password authentication to protect access.
-*   Optional: Send generated summaries directly to a specified list in your Karakeep/Hoarder instance.
-*   Containerized using Docker and Docker Compose for easy deployment.
+- Summarize content from any publicly accessible URL.
+- Summarize YouTube videos by fetching and processing their transcripts.
+- Uses the OpenAI API with a configurable model (default: `gpt-4.1-mini`).
+- Simple web interface built with Flask.
+- Bookmarklet for one-click summarization of the current page.
+- Basic username/password authentication.
+- Optional: Send generated summaries directly to a specified list in your Karakeep/Hoarder instance.
+- Containerized using Docker and Docker Compose for easy deployment.
 
-## Technology Stack
-
-*   **Backend:** Python, Flask
-*   **LLM:** OpenAI API (configurable via `OPENAI_MODEL_NAME` environment variable)
-*   **Web Scraping:** BeautifulSoup4, requests
-*   **YouTube Transcripts:** `youtube-transcript-api`
-*   **Serving:** Gunicorn
-*   **Containerization:** Docker, Docker Compose
-*   **Authentication:** Werkzeug (for password hashing)
-*   **Markdown Rendering:** Markdown
-
-## Setup and Installation
+## Setup & Installation
 
 ### Prerequisites
 
-*   [Docker](https://docs.docker.com/get-docker/)
-*   [Docker Compose](https://docs.docker.com/compose/install/) (usually included with Docker Desktop)
-*   [Git](https://git-scm.com/book/en/v2/Getting-Started-Installing-Git) (for cloning)
-*   An OpenAI API Key (obtainable from [OpenAI](https://openai.com/))
+- [Docker](https://docs.docker.com/get-docker/)
+- [Docker Compose](https://docs.docker.com/compose/install/) (usually included with Docker Desktop)
+- [Git](https://git-scm.com/book/en/v2/Getting-Started-Installing-Git)
+- An OpenAI API Key (get one from [OpenAI](https://openai.com/))
 
 ### Steps
 
-1.  **Clone the repository:**
-    ```bash
-    git clone https://github.com/your-username/web-summarizer.git # Replace with the actual repo URL
-    cd web-summarizer
-    ```
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/your-username/web-summarizer.git # Replace with the actual repo URL
+   cd web-summarizer
+   ```
 
-2.  **Configure Environment Variables:**
-    *   Navigate to the `summarizer_app` directory:
-        ```bash
-        cd summarizer_app
-        ```
-    *   Copy the example environment file:
-        ```bash
-        cp .env.example .env
-        ```
-    *   Edit the `.env` file with your actual credentials and settings. See the [Configuration](#configuration-summarizer_appenv) section below for details. **Crucially, set `FLASK_SECRET_KEY` and change `ADMIN_PASSWORD`**.
+2. **Configure Environment Variables:**
+   - Navigate to the `summarizer_app` directory:
+     ```bash
+     cd summarizer_app
+     ```
+   - Copy the example environment file:
+     ```bash
+     cp .env.example .env
+     ```
+   - Edit the `.env` file with your settings.  
+     **Important:** Set a strong `FLASK_SECRET_KEY`
+   - See the [Configuration](#configuration-summarizer_appenv) section below for details.
 
-3.  **Build and Run with Docker Compose:**
-    *   Navigate back to the project root directory (where `docker-compose.yaml` is located):
-        ```bash
-        cd ..
-        ```
-    *   Run Docker Compose:
-        ```bash
-        docker-compose up -d --build
-        ```
-        *   `-d` runs the container in detached mode (in the background).
-        *   `--build` forces a rebuild of the image if necessary (useful after code changes if not using volumes for development).
+3. **Build and Run with Docker Compose:**
+   - Navigate back to the project root directory (where `docker-compose.yaml` is located):
+     ```bash
+     cd ..
+     ```
+   - Run Docker Compose:
+     ```bash
+     docker-compose up -d --build
+     ```
+     - `-d` runs the container in detached mode (background).
+     - `--build` forces a rebuild of the image if necessary.
 
-4.  **Access the Application:**
-    *   Open your web browser and go to `http://localhost:25001` (or the host port you mapped in `docker-compose.yaml`).
+4. **Access the Application:**
+   - Open your browser and go to [http://localhost:25001](http://localhost:25001) (or the port you mapped in `docker-compose.yaml`).
 
 ## Configuration (`summarizer_app/.env`)
 
-The `.env` file within the `summarizer_app` directory controls the application's configuration:
+The `.env` file in the `summarizer_app` directory controls the application's configuration.  
+Copy `.env.example` to `.env` and edit as needed.
 
-### OpenAI Provider Configuration
+### Required
 
-*   `OPENAI_API_KEY`: **Required.** Your API key for the OpenAI service.
-*   `OPENAI_API_URL`: **Optional.** The URL for the OpenAI API endpoint. Defaults to `https://api.openai.com/v1/chat/completions`.
-*   `OPENAI_MODEL_NAME`: **Optional.** The name of the OpenAI model to use for summarization. Defaults to `gpt-4.1-mini`.
+- `OPENAI_API_KEY`: Your OpenAI API key.
+- `FLASK_SECRET_KEY`: A strong, random string for session security. Generate one with:
+  ```bash
+  python -c 'import os; print(os.urandom(24).hex())'
+  ```
 
-### General Configuration
+### Optional
 
-*   `FLASK_SECRET_KEY`: **Required.** A strong, random string used for session security (login persistence). Generate one using `python -c 'import os; print(os.urandom(24).hex())'`.
-*   `ADMIN_USERNAME`: The username for logging into the application. Default is `admin`.
-*   `ADMIN_PASSWORD`: **Required.** The password for the admin user. **Change this from the default!**
-*   `KARAKEEP_API_URL`: **Optional.** The base URL for your Karakeep/Hoarder API (e.g., `http://your-hoarder.com/api/v1`). Leave blank to disable integration.
-*   `KARAKEEP_API_KEY`: **Optional.** The API key generated within your Karakeep/Hoarder instance. Required if `KARAKEEP_API_URL` is set.
-*   `KARAKEEP_LIST_NAME`: **Optional.** The exact name of the list within Karakeep/Hoarder where summaries should be sent. Required if `KARAKEEP_API_URL` is set.
+- `OPENAI_API_URL`: OpenAI API endpoint (default: `https://api.openai.com/v1/chat/completions`)
+- `OPENAI_MODEL_NAME`: OpenAI model to use (default: `gpt-4.1-mini`)
+- `KARAKEEP_API_URL`: Base URL for your Karakeep/Hoarder API (leave blank to disable)
+- `KARAKEEP_API_KEY`: API key for Karakeep/Hoarder (required if using integration)
+- `KARAKEEP_LIST_NAME`: Name of the list in Karakeep/Hoarder for summaries (required if using integration)
 
-**Note:** The application requires `FLASK_SECRET_KEY` to be set for login sessions to persist across restarts. If not set, a temporary key is generated, but logins will be lost on restart.
+**Note:** If `FLASK_SECRET_KEY` is not set, a temporary key is generated and logins will be lost on restart.
 
 ## Usage
 
-1.  **Login:** Access the application URL (`http://localhost:25001` by default) and log in using the `ADMIN_USERNAME` and `ADMIN_PASSWORD` configured in your `.env` file.
-2.  **Summarize:**
-    *   Enter a valid URL (including `http://` or `https://`) into the input field and click "Summarize".
-    *   The application will fetch the content (or YouTube transcript), send it to the OpenAI API, and display the resulting summary.
-3.  **Bookmarklet:**
-    *   While logged in, drag the "Summarize Current Page" link from the main page to your browser's bookmarks bar.
-    *   When viewing a page you want to summarize, click the bookmarklet. It will open the summarizer application in a new tab with the current page's URL pre-filled.
-4.  **Karakeep/Hoarder Integration:**
-    *   If configured in the `.env` file, you will see a "Send Summary to Karakeep" button on the summary result page after a summary is successfully generated.
-    *   Clicking this button will attempt to:
-        1.  Generate a short title for the summary using the LLM.
-        2.  Find the ID of the specified `KARAKEEP_LIST_NAME`.
-        3.  Create a new bookmark/item in Karakeep/Hoarder with the title, summary (as Markdown text), and original URL, linking it to the specified list.
-    *   Feedback messages will be displayed on the next page indicating the success or failure of the Karakeep submission.
+1. **Login:**  
+   Go to [http://localhost:25001](http://localhost:25001)
+
+2. **Summarize:**  
+   Enter a valid URL (including `http://` or `https://`) and click "Summarize".  
+   The app will fetch the content (or YouTube transcript), send it to OpenAI, and display the summary.
+
+3. **Bookmarklet:**  
+   While logged in, drag the "Summarize Current Page" link from the main page to your bookmarks bar.  
+   When viewing a page you want to summarize, click the bookmarklet. It will open the summarizer with the current page's URL pre-filled.
+
+4. **Karakeep/Hoarder Integration (Optional):**  
+   If configured, a "Send Summary to Karakeep" button appears after generating a summary.  
+   Clicking it will:
+   - Generate a short title for the summary.
+   - Find the ID of the specified `KARAKEEP_LIST_NAME`.
+   - Create a new item in Karakeep/Hoarder with the title, summary, and original URL.
+
+   Feedback messages will indicate success or failure.
+
+## Troubleshooting
+
+- **Port already in use:**  
+  Make sure port `25001` is free or change the mapping in `docker-compose.yaml`.
+- **OpenAI errors:**  
+  Double-check your `OPENAI_API_KEY` and model name.
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+
