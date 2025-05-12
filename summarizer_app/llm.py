@@ -1,34 +1,46 @@
-# ABOUTME: Manages Gemini API configuration and summary/title generation logic.
+# ABOUTME: Manages LLM API configuration and summary/title generation logic.
 # ABOUTME: Used for generating summaries and titles from content using the LLM.
 
 import logging
 import concurrent.futures
 from concurrent.futures import TimeoutError as FuturesTimeoutError
-import google.generativeai as genai
-from google.api_core.exceptions import DeadlineExceeded
+import openai
 from config import Config
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Configure Gemini API
-if Config.GEMINI_API_KEY:
-    try:
-        genai.configure(api_key=Config.GEMINI_API_KEY)
-        llm = genai.GenerativeModel(Config.GEMINI_MODEL_NAME)
-        logging.info(f"Gemini API configured successfully with model: {Config.GEMINI_MODEL_NAME}.")
-    except Exception as e:
-        logging.error(f"Failed to configure Gemini API with model '{Config.GEMINI_MODEL_NAME}': {e}")
-        llm = None
+# Configure OpenAI API client
+client = openai.OpenAI(api_key=Config.OPENAI_API_KEY) if Config.OPENAI_API_KEY else None
+if client:
+    logging.info(f"OpenAI API configured successfully with model: {Config.OPENAI_MODEL_NAME}.")
 else:
-    logging.error("FATAL: GEMINI_API_KEY not found in environment variables.")
-    llm = None
+    logging.warning("OPENAI_API_KEY not found in environment variables. OpenAI functionality will be disabled.")
+
+def _call_openai(prompt: str, model: str) -> str | None:
+    """Call the OpenAI API with the given prompt and model."""
+    if not client:
+        logging.error("OpenAI client not initialized. Check your API key configuration.")
+        return None
+
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7,
+            top_p=0.95
+        )
+        if response.choices and response.choices[0].message and response.choices[0].message.content:
+            return response.choices[0].message.content.strip()
+        else:
+            logging.error(f"OpenAI API returned unexpected or empty response.")
+            return None
+    except openai.OpenAIError as e:
+        logging.error(f"Error calling OpenAI API: {e}")
+        return None
 
 def get_summary_from_llm(content: str, source_url: str, is_youtube: bool = False) -> str | None:
-    """Sends content (web page or YT transcript) to Gemini API for summarization."""
-    if not llm:
-        logging.error("LLM client not initialized. Cannot generate summary.")
-        return None
+    """Sends content (web page or YT transcript) to the LLM API for summarization."""
     if not content:
         logging.warning("No content provided to summarize.")
         return None
@@ -39,7 +51,7 @@ def get_summary_from_llm(content: str, source_url: str, is_youtube: bool = False
         logging.warning(f"Content too large for LLM API ({len(content)} chars). Truncating to {MAX_CONTENT_LENGTH} chars.")
         content = content[:MAX_CONTENT_LENGTH] + "... [Content truncated due to size]"
 
-    logging.info(f"Preparing to send content (length: {len(content)}, type: {'YouTube' if is_youtube else 'WebPage'}) to Gemini")
+    logging.info(f"Preparing to send content (length: {len(content)}, type: {'YouTube' if is_youtube else 'WebPage'}) to LLM")
 
     if is_youtube:
         prompt = f"""You are a helpful AI assistant that connects to YouTube videos, downloads their transcripts, and provides detailed summaries. Your goal is to create comprehensive and easy-to-understand summaries, highlighting all key points discussed.
@@ -52,6 +64,7 @@ Here's how you should operate:
 Use bold or other formatting for bullet points or where it makes sense, for emphasis or to highlight important topics.  Make sure any sub headings are also bold formatted or made to stand out.
  Use clear and concise language.
  Present the information in a logical order.
+ Do not ask a follow up question.
 
 Transcript:
 ---
@@ -69,6 +82,7 @@ Make sure the story is thoroughly expanded, include snippets from the article or
 Provide comprehensive coverage of the topic, including detailed information and multiple perspectives.
 Use clear headings and bullet points.
 Highlight key takeaways.
+Do not ask a follow up question.
 
 Content:
 ---
@@ -77,56 +91,12 @@ Content:
 
 Summary:"""
 
-    logging.info(f"Sending request to Gemini API (prompt length: {len(prompt)})")
+    logging.info(f"Sending request to LLM API (prompt length: {len(prompt)})")
 
-    try:
-        # Set proper generation config
-        generation_config = {
-            "temperature": 0.7,
-            "top_p": 0.95
-        }
-
-        # Use ThreadPoolExecutor to implement timeout
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            # Create a future for the API call
-            future = executor.submit(lambda: llm.generate_content(prompt, generation_config=generation_config))
-
-            try:
-                # Wait for the result with a timeout
-                logging.info("Starting LLM API call with 90 second timeout")
-                response = future.result(timeout=90)  # 90 second timeout
-
-                if response.candidates and response.candidates[0].content and response.candidates[0].content.parts:
-                    summary = response.candidates[0].content.parts[0].text
-                    logging.info(f"Successfully generated summary from Gemini ({len(summary)} chars)")
-                    return summary.strip()
-                else:
-                    try:
-                        finish_reason = response.candidates[0].finish_reason if response.candidates else "Unknown"
-                        safety_ratings = response.prompt_feedback.safety_ratings if response.prompt_feedback else "N/A"
-                        logging.error(f"Gemini API returned unexpected or empty response. Finish Reason: {finish_reason}, Safety: {safety_ratings}")
-                    except Exception:
-                        logging.error(f"Gemini API returned unexpected or empty response. Could not parse details.")
-                    return None
-
-            except FuturesTimeoutError:
-                logging.error("Gemini API request timed out (exceeded 90 seconds)")
-                # Cancel the future if possible
-                future.cancel()
-                return None
-            except DeadlineExceeded:
-                logging.error("Gemini API request exceeded deadline")
-                return None
-
-    except Exception as e:
-        logging.error(f"Error calling Gemini API: {e}")
-        return None
+    return _call_openai(prompt, Config.OPENAI_MODEL_NAME)
 
 def get_short_title_from_llm(summary_text: str) -> str | None:
     """Generates a short title ( < 10 words) for the summary using the LLM."""
-    if not llm:
-        logging.error("LLM client not initialized. Cannot generate title.")
-        return None
     if not summary_text:
         logging.warning("No summary text provided to generate title from.")
         return None
@@ -141,42 +111,4 @@ Text to summarize into a title:
 
 Concise Title (less than 10 words):""" # Limit input length just in case
 
-    try:
-        # Set proper generation config
-        generation_config = {
-            "temperature": 0.7,
-            "top_p": 0.95
-        }
-
-        # Use ThreadPoolExecutor to implement timeout
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            # Create a future for the API call
-            future = executor.submit(lambda: llm.generate_content(prompt, generation_config=generation_config))
-
-            try:
-                # Wait for the result with a timeout
-                logging.info("Starting LLM title generation with 30 second timeout")
-                response = future.result(timeout=30)  # 30 second timeout for title generation
-
-                if response.candidates and response.candidates[0].content and response.candidates[0].content.parts:
-                    title = response.candidates[0].content.parts[0].text.strip()
-                    # Basic cleanup: remove potential quotes, ensure reasonable length
-                    title = title.strip('"\'')
-                    if len(title.split()) > 12: # Allow slightly more than 10 just in case
-                        logging.warning(f"LLM generated title longer than expected: '{title}'. Truncating.")
-                        title = " ".join(title.split()[:10]) + "..."
-                    logging.info(f"Successfully generated short title: '{title}'")
-                    return title
-                else:
-                    logging.error(f"LLM failed to generate a short title. Response: {response}")
-                    return None
-
-            except FuturesTimeoutError:
-                logging.error("Gemini API title generation timed out (exceeded 30 seconds)")
-                # Cancel the future if possible
-                future.cancel()
-                return None
-
-    except Exception as e:
-        logging.error(f"Error calling Gemini API for title generation: {e}")
-        return None
+    return _call_openai(prompt, Config.OPENAI_MODEL_NAME)

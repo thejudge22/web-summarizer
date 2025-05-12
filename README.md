@@ -1,12 +1,12 @@
 # Web Summarizer
 
-A simple web application that summarizes web pages and YouTube videos using the Google Gemini API. It includes basic authentication, a bookmarklet for quick summarizing, and optional integration with Karakeep
+A simple web application that summarizes web pages and YouTube videos using the OpenAI API. It includes basic authentication, a bookmarklet for quick summarizing, and optional integration with Karakeep
 
 ## Features
 
 *   Summarize content from any publicly accessible URL.
 *   Summarize YouTube videos by fetching and processing their transcripts.
-*   Uses the Google Gemini API with a configurable model (defaulting to `gemini-2.0-flash`).
+*   Uses the OpenAI API with a configurable model (defaulting to `gpt-4.1-mini`).
 *   Simple web interface built with Flask.
 *   Bookmarklet to quickly summarize the currently viewed page.
 *   Basic username/password authentication to protect access.
@@ -16,7 +16,7 @@ A simple web application that summarizes web pages and YouTube videos using the 
 ## Technology Stack
 
 *   **Backend:** Python, Flask
-*   **LLM:** Google Gemini API (configurable via `GEMINI_MODEL_NAME` environment variable)
+*   **LLM:** OpenAI API (configurable via `OPENAI_MODEL_NAME` environment variable)
 *   **Web Scraping:** BeautifulSoup4, requests
 *   **YouTube Transcripts:** `youtube-transcript-api`
 *   **Serving:** Gunicorn
@@ -31,7 +31,7 @@ A simple web application that summarizes web pages and YouTube videos using the 
 *   [Docker](https://docs.docker.com/get-docker/)
 *   [Docker Compose](https://docs.docker.com/compose/install/) (usually included with Docker Desktop)
 *   [Git](https://git-scm.com/book/en/v2/Getting-Started-Installing-Git) (for cloning)
-*   A Google Gemini API Key (obtainable from [Google AI Studio](https://aistudio.google.com/))
+*   An OpenAI API Key (obtainable from [OpenAI](https://openai.com/))
 
 ### Steps
 
@@ -71,14 +71,20 @@ A simple web application that summarizes web pages and YouTube videos using the 
 
 The `.env` file within the `summarizer_app` directory controls the application's configuration:
 
-*   `GEMINI_API_KEY`: **Required.** Your API key for the Google Gemini service.
+### OpenAI Provider Configuration
+
+*   `OPENAI_API_KEY`: **Required.** Your API key for the OpenAI service.
+*   `OPENAI_API_URL`: **Optional.** The URL for the OpenAI API endpoint. Defaults to `https://api.openai.com/v1/chat/completions`.
+*   `OPENAI_MODEL_NAME`: **Optional.** The name of the OpenAI model to use for summarization. Defaults to `gpt-4.1-mini`.
+
+### General Configuration
+
 *   `FLASK_SECRET_KEY`: **Required.** A strong, random string used for session security (login persistence). Generate one using `python -c 'import os; print(os.urandom(24).hex())'`.
 *   `ADMIN_USERNAME`: The username for logging into the application. Default is `admin`.
 *   `ADMIN_PASSWORD`: **Required.** The password for the admin user. **Change this from the default!**
 *   `KARAKEEP_API_URL`: **Optional.** The base URL for your Karakeep/Hoarder API (e.g., `http://your-hoarder.com/api/v1`). Leave blank to disable integration.
 *   `KARAKEEP_API_KEY`: **Optional.** The API key generated within your Karakeep/Hoarder instance. Required if `KARAKEEP_API_URL` is set.
 *   `KARAKEEP_LIST_NAME`: **Optional.** The exact name of the list within Karakeep/Hoarder where summaries should be sent. Required if `KARAKEEP_API_URL` is set.
-*   `GEMINI_MODEL_NAME`: **Optional.** The name of the Gemini model to use for summarization (e.g., `gemini-1.5-flash`, `gemini-1.5-pro`). Defaults to `gemini-2.0-flash`.
 
 **Note:** The application requires `FLASK_SECRET_KEY` to be set for login sessions to persist across restarts. If not set, a temporary key is generated, but logins will be lost on restart.
 
@@ -87,7 +93,7 @@ The `.env` file within the `summarizer_app` directory controls the application's
 1.  **Login:** Access the application URL (`http://localhost:25001` by default) and log in using the `ADMIN_USERNAME` and `ADMIN_PASSWORD` configured in your `.env` file.
 2.  **Summarize:**
     *   Enter a valid URL (including `http://` or `https://`) into the input field and click "Summarize".
-    *   The application will fetch the content (or YouTube transcript), send it to the Gemini API, and display the resulting summary.
+    *   The application will fetch the content (or YouTube transcript), send it to the OpenAI API, and display the resulting summary.
 3.  **Bookmarklet:**
     *   While logged in, drag the "Summarize Current Page" link from the main page to your browser's bookmarks bar.
     *   When viewing a page you want to summarize, click the bookmarklet. It will open the summarizer application in a new tab with the current page's URL pre-filled.
