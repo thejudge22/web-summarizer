@@ -1,9 +1,28 @@
+<!-- ABOUTME: Main page template for the Web Summarizer. -->
+<!-- ABOUTME: Displays the URL input form. -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>URL Summarizer</title>
+    <link rel="apple-touch-icon" sizes="57x57" href="{{ url_for('static', filename='icons/apple-icon-57x57.png') }}">
+    <link rel="apple-touch-icon" sizes="60x60" href="{{ url_for('static', filename='icons/apple-icon-60x60.png') }}">
+    <link rel="apple-touch-icon" sizes="72x72" href="{{ url_for('static', filename='icons/apple-icon-72x72.png') }}">
+    <link rel="apple-touch-icon" sizes="76x76" href="{{ url_for('static', filename='icons/apple-icon-76x76.png') }}">
+    <link rel="apple-touch-icon" sizes="114x114" href="{{ url_for('static', filename='icons/apple-icon-114x114.png') }}">
+    <link rel="apple-touch-icon" sizes="120x120" href="{{ url_for('static', filename='icons/apple-icon-120x120.png') }}">
+    <link rel="apple-touch-icon" sizes="144x144" href="{{ url_for('static', filename='icons/apple-icon-144x144.png') }}">
+    <link rel="apple-touch-icon" sizes="152x152" href="{{ url_for('static', filename='icons/apple-icon-152x152.png') }}">
+    <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='icons/apple-icon-180x180.png') }}">
+    <link rel="icon" type="image/png" sizes="192x192"  href="{{ url_for('static', filename='icons/android-icon-192x192.png') }}">
+    <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='icons/favicon-32x32.png') }}">
+    <link rel="icon" type="image/png" sizes="96x96" href="{{ url_for('static', filename='icons/favicon-96x96.png') }}">
+    <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='icons/favicon-16x16.png') }}">
+    <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+    <meta name="msapplication-TileColor" content="#ffffff">
+    <meta name="msapplication-TileImage" content="{{ url_for('static', filename='icons/ms-icon-144x144.png') }}">
+    <meta name="theme-color" content="#ffffff">
     <style>
         body { font-family: sans-serif; line-height: 1.6; padding: 20px; max-width: 800px; margin: auto; }
         .container { background-color: #f9f9f9; padding: 25px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); position: relative; /* Needed for logout positioning */ }
@@ -119,12 +138,12 @@
             loadingIndicator.textContent = "Processing... Please wait.";
             submitButton.disabled = true;
             submitButton.textContent = 'Processing...';
-            
+
             // Set up progress updates for long-running requests
             let processingTime = 0;
             const progressInterval = setInterval(() => {
                 processingTime += 5;
-                
+
                 if (processingTime === 10) {
                     loadingIndicator.textContent = "Fetching content from the URL...";
                 } else if (processingTime === 30) {
@@ -135,7 +154,7 @@
                 } else if (processingTime === 90) {
                     loadingIndicator.textContent = "Almost done... Finalizing summary.";
                 }
-                
+
                 if (processingTime >= 120) {
                     clearInterval(progressInterval);
                 }
@@ -145,9 +164,9 @@
                 // Create AbortController for fetch timeout
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 120000); // 120 second timeout (2 minutes)
-                
+
                 loadingIndicator.textContent = "Processing request... This may take up to 2 minutes for large content.";
-                
+
                 const response = await fetch("{{ url_for('summarize_ajax') }}", {
                     method: 'POST',
                     headers: {
@@ -157,7 +176,7 @@
                     body: JSON.stringify({ url: url }),
                     signal: controller.signal // Add abort controller signal
                 });
-                
+
                 // Clear timeout if request completes
                 clearTimeout(timeoutId);
 
@@ -221,14 +240,14 @@
 
         // Store progress interval globally to clear it from any function
         let progressIntervalId = null;
-        
+
         function hideLoading() {
              // Clear any running progress interval
              if (progressIntervalId) {
                  clearInterval(progressIntervalId);
                  progressIntervalId = null;
              }
-             
+
              loadingIndicator.style.display = 'none';
              loadingIndicator.classList.remove('extended-wait');
              submitButton.disabled = false;
