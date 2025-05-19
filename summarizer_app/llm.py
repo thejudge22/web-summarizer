@@ -11,11 +11,25 @@ from config import Config
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Configure OpenAI API client
-client = openai.OpenAI(api_key=Config.OPENAI_API_KEY) if Config.OPENAI_API_KEY else None
-if client:
-    logging.info(f"OpenAI API configured successfully with model: {Config.OPENAI_MODEL_NAME}.")
-else:
-    logging.warning("OPENAI_API_KEY not found in environment variables. OpenAI functionality will be disabled.")
+logging.info(f"OPENAI_API_URL from config: {Config.OPENAI_API_URL}")
+logging.info(f"OPENAI_API_KEY present: {bool(Config.OPENAI_API_KEY)}")
+logging.info(f"OPENAI_MODEL_NAME from config: {Config.OPENAI_MODEL_NAME}")
+
+# Initialize OpenAI client with both API key and base_url from config
+try:
+    if Config.OPENAI_API_KEY:
+        client = openai.OpenAI(
+            api_key=Config.OPENAI_API_KEY,
+            base_url=Config.OPENAI_API_URL  # Use the configured API URL
+        )
+        logging.info(f"OpenAI API configured successfully with model: {Config.OPENAI_MODEL_NAME}.")
+        logging.info(f"OpenAI client base_url: {client.base_url}")
+    else:
+        client = None
+        logging.warning("OPENAI_API_KEY not found in environment variables. OpenAI functionality will be disabled.")
+except Exception as e:
+    logging.error(f"Error initializing OpenAI client: {e}")
+    client = None
 
 def _call_openai(prompt: str, model: str) -> str | None:
     """Call the OpenAI API with the given prompt and model."""

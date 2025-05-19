@@ -14,8 +14,10 @@ class Config:
 
     # New variables for OpenAI
     OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
-    OPENAI_API_URL = os.environ.get("OPENAI_API_URL", "https://api.openai.com/v1/chat/completions")
-    OPENAI_MODEL_NAME = os.environ.get("OPENAI_MODEL_NAME", "gpt-4.1-mini")
+    OPENAI_API_URL = os.environ.get("OPENAI_API_URL")
+    if OPENAI_API_URL is None:
+        raise ValueError("OPENAI_API_URL environment variable is not set")
+    OPENAI_MODEL_NAME = os.environ.get("OPENAI_MODEL_NAME")
 
     # Calculated property for Karakeep integration status
     @classmethod
